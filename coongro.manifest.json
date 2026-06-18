@@ -1,0 +1,63 @@
+{
+  "id": "purchases",
+  "version": "0.1.0",
+  "apiVersion": "2.0",
+  "displayName": "Compras",
+  "assets": {
+    "styles": [
+      "./dist/assets/tailwind.css",
+      "./dist/assets/fontawesome/css/all.min.css"
+    ]
+  },
+  "contributes": {
+    "menus": [
+      {
+        "path": "Compras",
+        "order": 7,
+        "icon": "assets/icons/cart.svg",
+        "color": "#8b5cf6"
+      },
+      {
+        "path": "Compras/Órdenes",
+        "order": 1,
+        "viewId": "purchases.compras.open"
+      },
+      {
+        "path": "Compras/Proveedores",
+        "order": 2,
+        "viewId": "purchases.proveedores.open"
+      }
+    ],
+    "views": [
+      {
+        "id": "purchases.compras.open",
+        "title": "Compras",
+        "component": "./dist/views/compras/index.js",
+        "export": "ComprasView"
+      },
+      {
+        "id": "purchases.proveedores.open",
+        "title": "Proveedores",
+        "component": "./dist/views/proveedores/index.js",
+        "export": "ProveedoresView"
+      }
+    ],
+    "repositories": [
+      {
+        "module": "./dist/repositories/supplier.repository.js",
+        "export": "SupplierRepository",
+        "prefix": "purchases.suppliers"
+      },
+      {
+        "module": "./dist/repositories/purchase.repository.js",
+        "export": "PurchaseRepository",
+        "prefix": "purchases.records"
+      },
+      {
+        "module": "./dist/repositories/purchase-line.repository.js",
+        "export": "PurchaseLineRepository",
+        "prefix": "purchases.lines"
+      }
+    ]
+  }
+}
