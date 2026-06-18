@@ -12,28 +12,28 @@
   "contributes": {
     "menus": [
       {
-        "path": "Compras",
+        "path": "Salidas",
         "order": 7,
         "icon": "assets/icons/cart.svg",
         "color": "#8b5cf6"
       },
       {
-        "path": "Compras/Órdenes",
+        "path": "Salidas/Movimientos",
         "order": 1,
-        "viewId": "purchases.compras.open"
+        "viewId": "purchases.salidas.open"
       },
       {
-        "path": "Compras/Proveedores",
+        "path": "Salidas/Proveedores",
         "order": 2,
         "viewId": "purchases.proveedores.open"
       }
     ],
     "views": [
       {
-        "id": "purchases.compras.open",
-        "title": "Compras",
+        "id": "purchases.salidas.open",
+        "title": "Salidas",
         "component": "./dist/views/compras/index.js",
-        "export": "ComprasView"
+        "export": "SalidasView"
       },
       {
         "id": "purchases.proveedores.open",
