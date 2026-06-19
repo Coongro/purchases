@@ -1,6 +1,7 @@
 import { getHostReact, getHostUI, usePlugin } from '@coongro/plugin-sdk';
 
 const UI = getHostUI();
+import { SalidaDetailDrawer } from '../../components/SalidaDetailDrawer.js';
 import { SalidasSummaryCards } from '../../components/SalidasSummaryCards.js';
 import type { EstadoFilter } from '../../components/SalidasSummaryCards.js';
 import { PAYMENT_METHODS, GASTO_CATEGORIES } from '../../constants.js';
@@ -64,6 +65,8 @@ export function SalidasView() {
   const [search, setSearch] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>('todas');
   const [deudaOpen, setDeudaOpen] = useState(true);
+  // Salida abierta en el drawer de detalle (click en una fila).
+  const [detailRow, setDetailRow] = useState<SalidaRow | null>(null);
 
   // Estado del drawer (compartido gasto/compra)
   const [medio, setMedio] = useState('efectivo');
@@ -359,6 +362,7 @@ export function SalidasView() {
           loading,
           error,
           onRetry: reload,
+          onRowClick: (s: SalidaRow) => setDetailRow(s),
           columns,
           searchPlaceholder: 'Proveedor o concepto',
           searchValue: search,
@@ -704,6 +708,15 @@ export function SalidasView() {
           )
         )
       )
-    )
+    ),
+
+    // Drawer de detalle — click en una fila abre el detalle + permite registrar pago.
+    h(SalidaDetailDrawer, {
+      accountId: detailRow?.id ?? null,
+      concept: detailRow?.concept,
+      kind: detailRow?.kind,
+      onClose: () => setDetailRow(null),
+      onChanged: () => void reload(),
+    })
   );
 }
