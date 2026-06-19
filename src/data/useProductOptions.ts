@@ -3,11 +3,35 @@ import { getHostReact, actions } from '@coongro/plugin-sdk';
 const React = getHostReact();
 const { useState, useEffect } = React;
 
+/** Categoría funcional para los 3 selectores del drawer de compra. */
+export type ProductBucket = 'med' | 'vacc' | 'insumo';
+
 export interface ProductOption {
   id: string;
   name: string;
   /** Precio de compra del catálogo — pre-rellena el costo de la línea. */
   purchasePrice: string | null;
+  /** Med / Vacuna / Insumo — derivado del nombre de la categoría (heurístico). */
+  bucket: ProductBucket;
+}
+
+/**
+ * Bucket por nombre de categoría: "vacunas" → vacc; sin categoría o medicamento/fármaco →
+ * med; el resto → insumo. Pragmático para el seed actual (vacunas + 2 meds sin categoría);
+ * si products gana una taxonomía propia, esto se reemplaza por el campo real.
+ */
+function bucketOf(name: string | null): ProductBucket {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('vacun')) return 'vacc';
+  if (
+    !n ||
+    n.includes('medic') ||
+    n.includes('fármac') ||
+    n.includes('farmac') ||
+    n.includes('antibi')
+  )
+    return 'med';
+  return 'insumo';
 }
 
 interface RawProduct {
@@ -58,6 +82,7 @@ export function useProductOptions(): ProductOption[] {
             .catch(() => [] as RawCategory[]),
         ]);
         const serviceIds = serviceCategoryIds(cats ?? []);
+        const catName = new Map((cats ?? []).map((c) => [c.id, c.name]));
         const seen = new Set<string>();
         const filtered = (list ?? []).filter((p) => {
           if (p.category_id && serviceIds.has(p.category_id)) return false; // servicio
@@ -68,7 +93,12 @@ export function useProductOptions(): ProductOption[] {
         });
         if (active) {
           setOptions(
-            filtered.map((p) => ({ id: p.id, name: p.name, purchasePrice: p.purchase_price }))
+            filtered.map((p) => ({
+              id: p.id,
+              name: p.name,
+              purchasePrice: p.purchase_price,
+              bucket: bucketOf(p.category_id ? (catName.get(p.category_id) ?? null) : null),
+            }))
           );
         }
       } catch {

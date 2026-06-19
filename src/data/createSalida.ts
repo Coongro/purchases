@@ -7,8 +7,18 @@ export interface SalidaItemInput {
   unitCost: number;
   /** N° de lote (opcional). Si viene, la mercadería entra como lote en products.batches. */
   lote?: string | null;
-  /** Vencimiento del lote (ISO o YYYY-MM-DD, opcional). */
+  /** Vencimiento del lote (formato "MM/AAAA" del drawer, o ISO). Opcional. */
   expiration?: string | null;
+}
+
+/** Normaliza el vencimiento a fecha ISO para products.batches: "MM/AAAA" → "AAAA-MM-01". */
+function vencToISO(v: string | null | undefined): string | null {
+  const s = (v ?? '').trim();
+  if (!s) return null;
+  const mm = /^(\d{1,2})\/(\d{4})$/.exec(s);
+  if (mm) return `${mm[2]}-${mm[1].padStart(2, '0')}-01`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
+  return null;
 }
 
 /** Alimenta el stock genérico (products) por un ítem de compra. Blando: si products no está. */
@@ -42,7 +52,7 @@ async function feedBatch(it: SalidaItemInput): Promise<void> {
       data: {
         product_id: it.productId,
         batch_number: it.lote.trim(),
-        expiration_date: it.expiration?.trim() || null,
+        expiration_date: vencToISO(it.expiration),
         quantity: String(it.quantity),
         purchase_price: String(it.unitCost),
         status: 'active',
@@ -115,6 +125,11 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
   // 2) Líneas.
   if (isCompra) {
     for (const it of items) {
+      // Lote como texto de display, guardado en source_ref para mostrarlo en el detalle
+      // ("L-4471 · vence 12/2026"). El venc llega ya como "MM/AAAA" del drawer.
+      const venc = it.expiration?.trim() || '';
+      const vencSuffix = venc ? ` · vence ${venc}` : '';
+      const loteRef = it.lote?.trim() ? `${it.lote.trim()}${vencSuffix}` : null;
       await actions.execute('billing.lines.add', {
         accountId,
         productId: it.productId,
@@ -123,6 +138,7 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
         unitPrice: String(it.unitCost),
         subtotal: String(it.quantity * it.unitCost),
         sourceType: 'compra',
+        sourceRef: loteRef,
       });
       // Alimentar stock genérico (solo si la línea está atada a un producto).
       await feedStock(accountId, it);
