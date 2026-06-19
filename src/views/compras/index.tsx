@@ -25,6 +25,8 @@ interface LineState {
   description: string;
   quantity: string;
   unitCost: string;
+  lote: string;
+  expiration: string;
 }
 
 const emptyLine = (): LineState => ({
@@ -32,6 +34,8 @@ const emptyLine = (): LineState => ({
   description: '',
   quantity: '1',
   unitCost: '',
+  lote: '',
+  expiration: '',
 });
 
 /** Badge de estado de la salida (pagada / parcial · saldo / a pagar). */
@@ -153,6 +157,8 @@ export function SalidasView() {
           description: l.description,
           quantity: Number(l.quantity) || 0,
           unitCost: Number(l.unitCost) || 0,
+          lote: l.lote || null,
+          expiration: l.expiration || null,
         })),
       });
       toast.success(
@@ -485,58 +491,40 @@ export function SalidasView() {
                 'div',
                 { className: 'flex flex-col gap-2' },
                 h('label', { className: FIELD_LABEL }, 'Ítems'),
-                ...lines.map((l, i) =>
-                  h(
+                ...lines.map((l, i) => {
+                  const sub = (Number(l.quantity) || 0) * (Number(l.unitCost) || 0);
+                  return h(
                     'div',
-                    { key: i, className: 'grid grid-cols-12 gap-2 items-center' },
+                    {
+                      key: i,
+                      className:
+                        'flex flex-col gap-2 rounded-lg border border-cg-border bg-cg-bg-secondary p-3',
+                    },
+                    // Producto + quitar
                     h(
                       'div',
-                      { className: 'col-span-6' },
-                      productOptions.length > 0
-                        ? h(
-                            UI.Select,
-                            {
-                              value: l.productId,
-                              onValueChange: (v: string) => onPickProduct(i, v),
-                              placeholder: 'Producto',
-                            } as any,
-                            ...productOptions.map((o) =>
-                              h(UI.SelectItem, { key: o.id, value: o.id } as any, o.name)
+                      { className: 'flex items-center gap-2' },
+                      h(
+                        'div',
+                        { className: 'flex-1 min-w-0' },
+                        productOptions.length > 0
+                          ? h(
+                              UI.Select,
+                              {
+                                value: l.productId,
+                                onValueChange: (v: string) => onPickProduct(i, v),
+                                placeholder: 'Producto',
+                              } as any,
+                              ...productOptions.map((o) =>
+                                h(UI.SelectItem, { key: o.id, value: o.id } as any, o.name)
+                              )
                             )
-                          )
-                        : h(UI.Input, {
-                            value: l.description,
-                            onChange: (e: any) => setLine(i, { description: e.target.value }),
-                            placeholder: 'Descripción',
-                          } as any)
-                    ),
-                    h(
-                      'div',
-                      { className: 'col-span-2' },
-                      h(UI.Input, {
-                        type: 'number',
-                        min: 0,
-                        step: '1',
-                        value: l.quantity,
-                        onChange: (e: any) => setLine(i, { quantity: e.target.value }),
-                        placeholder: 'Cant.',
-                      } as any)
-                    ),
-                    h(
-                      'div',
-                      { className: 'col-span-3' },
-                      h(UI.Input, {
-                        type: 'number',
-                        min: 0,
-                        step: '0.01',
-                        value: l.unitCost,
-                        onChange: (e: any) => setLine(i, { unitCost: e.target.value }),
-                        placeholder: 'Costo',
-                      } as any)
-                    ),
-                    h(
-                      'div',
-                      { className: 'col-span-1 flex justify-end' },
+                          : h(UI.Input, {
+                              value: l.description,
+                              onChange: (e: any) => setLine(i, { description: e.target.value }),
+                              placeholder: 'Descripción',
+                            } as any)
+                      ),
                       h(
                         UI.IconButton,
                         {
@@ -548,9 +536,88 @@ export function SalidasView() {
                         } as any,
                         h(UI.DynamicIcon, { icon: 'Trash2', size: 13 } as any)
                       )
-                    )
-                  )
-                ),
+                    ),
+                    // Cantidad + costo
+                    h(
+                      'div',
+                      { className: 'grid grid-cols-2 gap-2' },
+                      h(
+                        'div',
+                        null,
+                        h('label', { className: FIELD_LABEL }, 'Cantidad'),
+                        h(UI.Input, {
+                          type: 'number',
+                          min: 0,
+                          step: '1',
+                          value: l.quantity,
+                          onChange: (e: any) => setLine(i, { quantity: e.target.value }),
+                        } as any)
+                      ),
+                      h(
+                        'div',
+                        null,
+                        h('label', { className: FIELD_LABEL }, 'Costo unit.'),
+                        h(UI.Input, {
+                          type: 'number',
+                          min: 0,
+                          step: '0.01',
+                          value: l.unitCost,
+                          onChange: (e: any) => setLine(i, { unitCost: e.target.value }),
+                          placeholder: '0',
+                        } as any)
+                      )
+                    ),
+                    // Lote + vencimiento (opcional → entra a products.batches)
+                    h(
+                      'div',
+                      { className: 'grid grid-cols-2 gap-2' },
+                      h(
+                        'div',
+                        null,
+                        h(
+                          'label',
+                          { className: FIELD_LABEL },
+                          'N° de lote',
+                          h('span', { className: 'font-normal text-cg-text-muted' }, ' · opcional')
+                        ),
+                        h(UI.Input, {
+                          value: l.lote,
+                          onChange: (e: any) => setLine(i, { lote: e.target.value }),
+                          placeholder: 'L-0000',
+                        } as any)
+                      ),
+                      h(
+                        'div',
+                        null,
+                        h('label', { className: FIELD_LABEL }, 'Vencimiento'),
+                        h(UI.Input, {
+                          type: 'date',
+                          value: l.expiration,
+                          onChange: (e: any) => setLine(i, { expiration: e.target.value }),
+                        } as any)
+                      )
+                    ),
+                    // Subtotal del ítem
+                    sub > 0 &&
+                      h(
+                        'div',
+                        {
+                          className:
+                            'flex items-center justify-between pt-1.5 border-t border-cg-border text-xs',
+                        },
+                        h(
+                          'span',
+                          { className: 'text-cg-text-muted font-mono' },
+                          `${Number(l.quantity) || 0} × ${formatMoney(Number(l.unitCost) || 0)}`
+                        ),
+                        h(
+                          'span',
+                          { className: 'font-mono font-semibold text-cg-text' },
+                          formatMoney(sub)
+                        )
+                      )
+                  );
+                }),
                 h(
                   'div',
                   null,

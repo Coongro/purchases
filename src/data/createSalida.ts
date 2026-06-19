@@ -5,6 +5,10 @@ export interface SalidaItemInput {
   description: string;
   quantity: number;
   unitCost: number;
+  /** N° de lote (opcional). Si viene, la mercadería entra como lote en products.batches. */
+  lote?: string | null;
+  /** Vencimiento del lote (ISO o YYYY-MM-DD, opcional). */
+  expiration?: string | null;
 }
 
 /** Alimenta el stock genérico (products) por un ítem de compra. Blando: si products no está. */
@@ -19,6 +23,29 @@ async function feedStock(accountId: string, it: SalidaItemInput): Promise<void> 
         unit_cost: String(it.unitCost),
         reference_type: 'salida',
         reference_id: accountId,
+      },
+    });
+  } catch {
+    /* products no disponible: la salida igual queda registrada */
+  }
+}
+
+/**
+ * Si el ítem trae lote, lo registra en el stock genérico de lotes (products.batches, COONG-217)
+ * — el mismo que leen Farmacia y la dispensación de recetas. Así comprar por Salidas hace
+ * aparecer el lote/vencimiento como stock disponible. Blando: si products no está.
+ */
+async function feedBatch(it: SalidaItemInput): Promise<void> {
+  if (!it.productId || !it.lote?.trim()) return;
+  try {
+    await actions.execute('products.batches.create', {
+      data: {
+        product_id: it.productId,
+        batch_number: it.lote.trim(),
+        expiration_date: it.expiration?.trim() || null,
+        quantity: String(it.quantity),
+        purchase_price: String(it.unitCost),
+        status: 'active',
       },
     });
   } catch {
@@ -49,8 +76,8 @@ export interface CreateSalidaInput {
  * - `contactId` de la cuenta = proveedor (Salidas resuelve nombres contra purchases.suppliers;
  *   Cobros nunca ve estas cuentas porque filtra receivable).
  * - `source` = 'gasto' | 'compra' → el tipo de la salida.
- * - Compra: además alimenta el stock genérico (products.stock 'in'). El lote/vencimiento es
- *   genérico aparte (COONG-217), no acá.
+ * - Compra: además alimenta el stock genérico (products.stock 'in') y, si el ítem trae lote,
+ *   lo registra en products.batches (lote/vencimiento genérico, COONG-217).
  * - billing/products son blandos (try/catch): si faltan, la salida no se pierde a medias.
  */
 export async function createSalida(input: CreateSalidaInput): Promise<string> {
@@ -99,6 +126,8 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
       });
       // Alimentar stock genérico (solo si la línea está atada a un producto).
       await feedStock(accountId, it);
+      // Si trae lote, registrarlo en products.batches (stock con lote/vencimiento).
+      await feedBatch(it);
     }
   } else {
     await actions.execute('billing.lines.add', {
