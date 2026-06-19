@@ -1,21 +1,19 @@
-import { getHostReact, getHostUI, actions } from '@coongro/plugin-sdk';
+import { getHostReact, actions } from '@coongro/plugin-sdk';
 
-const UI = getHostUI();
-import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL } from '../constants.js';
-import { formatMoney } from '../utils/money.js';
+import { fmt, MEDIO_BY_ID } from '../data/salidasUi.js';
+
+import { SalidasIcon as Icon } from './SalidasIcon.js';
 
 const React = getHostReact();
 const { useState, useEffect, useCallback } = React;
 const h = React.createElement;
-
-const SERIF = 'font-serif font-black tracking-tight';
-const SECTION_LABEL = 'text-[11px] font-bold tracking-wider uppercase text-cg-text-muted';
 
 interface AccountLine {
   description: string;
   quantity: string;
   unit_price: string;
   subtotal: string;
+  source_ref: string | null;
 }
 interface Payment {
   id: string;
@@ -33,42 +31,145 @@ interface SalidaDetail {
   payments: Payment[];
 }
 
+/** Form de pago inline — espejo de PagoForm del diseño (monto + quick + medios). */
+function PagoForm(props: {
+  saldo: number;
+  onCancel: () => void;
+  onConfirm: (monto: number, medio: string) => void;
+  busy: boolean;
+}) {
+  const { saldo, onCancel, onConfirm, busy } = props;
+  const [n, setN] = useState<number>(saldo);
+  const [medio, setMedio] = useState('efectivo');
+  const exceeds = n > saldo;
+  const onInput = (e: { target: { value: string } }) => {
+    const digits = e.target.value.replace(/[^\d]/g, '');
+    setN(digits ? parseInt(digits, 10) : 0);
+  };
+  return h(
+    'div',
+    { className: 'sa-pago-form' },
+    h(
+      'div',
+      { className: 'sa-form-eyebrow' },
+      h(Icon, { name: 'out', size: 14 }),
+      h('span', null, 'Registrar pago')
+    ),
+    h('label', { className: 'label', style: { marginBottom: 7 } }, 'Cuánto pagás'),
+    h(
+      'div',
+      { style: { position: 'relative' } },
+      h('span', { className: 'sa-amt-prefix' }, '$'),
+      h('input', {
+        className: `input sa-amt-input ${exceeds ? 'error' : ''}`,
+        value: n ? n.toLocaleString('es-AR') : '',
+        inputMode: 'numeric',
+        onChange: onInput,
+        placeholder: '0',
+        autoFocus: true,
+      })
+    ),
+    h(
+      'div',
+      { className: 'sa-quick' },
+      h(
+        'button',
+        { className: n === saldo ? 'on' : '', onClick: () => setN(saldo) },
+        'Saldo completo'
+      ),
+      h(
+        'button',
+        {
+          className: n === Math.round(saldo / 2) ? 'on' : '',
+          onClick: () => setN(Math.round(saldo / 2)),
+        },
+        'Mitad'
+      ),
+      h(
+        'span',
+        {
+          style: {
+            marginLeft: 'auto',
+            fontSize: 11.5,
+            color: exceeds ? 'var(--red-dk)' : 'var(--neutral-500)',
+          },
+        },
+        exceeds ? 'Supera el saldo' : `Saldo ${fmt(saldo)}`
+      )
+    ),
+    h('label', { className: 'label', style: { margin: '16px 0 7px' } }, 'Con qué'),
+    h(
+      'div',
+      { className: 'sa-medios-form' },
+      ...['efectivo', 'transferencia', 'debito', 'credito'].map((id) =>
+        h(
+          'button',
+          {
+            key: id,
+            className: `sa-medio-form ${medio === id ? 'sel' : ''}`,
+            onClick: () => setMedio(id),
+          },
+          h(Icon, { name: MEDIO_BY_ID[id].icon, size: 16 }),
+          h('span', null, MEDIO_BY_ID[id].label)
+        )
+      )
+    ),
+    h(
+      'div',
+      { style: { display: 'flex', gap: 8, marginTop: 18 } },
+      h(
+        'button',
+        {
+          className: 'btn btn-secondary btn-lg',
+          style: { flex: 1 },
+          disabled: busy,
+          onClick: onCancel,
+        },
+        'Cancelar'
+      ),
+      h(
+        'button',
+        {
+          className: 'btn btn-dark btn-lg',
+          style: { flex: 1.5 },
+          disabled: busy || !(n > 0),
+          onClick: () => onConfirm(n, medio),
+        },
+        h(Icon, { name: 'check', size: 15 }),
+        ` Pagar ${n > 0 ? fmt(n) : ''}`
+      )
+    )
+  );
+}
+
 /**
- * Detalle de una salida (cuenta por pagar de billing) — espejo del checkout de Cobros.
- * Muestra ítems/concepto + total/pagado/saldo + pagos, y permite REGISTRAR UN PAGO (saldar
- * las "a pagar"), igual que "Cobrar". Usa el ledger payable (billing.accounts.getWithLines +
- * billing.payments.record), el mismo motor de Cobros.
+ * Detalle de una salida (cuenta por pagar de billing) — markup portado 1:1 de
+ * detalle-drawer.jsx. Total/pagado/saldo + pagos + acción "Pagar" (saldar las a-pagar),
+ * sobre el ledger payable (billing.accounts.getWithLines + billing.payments.record).
  */
 export function SalidaDetailDrawer(props: {
-  /** id de cuenta a mostrar; null = cerrado. */
   accountId: string | null;
-  /** Concepto resuelto (proveedor o gasto) + tipo, del row — para el header. */
   concept?: string;
   kind?: 'compra' | 'gasto';
+  date?: string;
+  paymentMethod?: string | null;
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { accountId, concept, kind, onClose, onChanged } = props;
+  const { accountId, concept, kind, date, paymentMethod, onClose, onChanged } = props;
   const [detail, setDetail] = useState<SalidaDetail | null>(null);
-  const [loading, setLoading] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [payAmount, setPayAmount] = useState('');
-  const [payMethod, setPayMethod] = useState('efectivo');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!accountId) return;
-    setLoading(true);
     try {
       const d = await actions.execute<SalidaDetail>('billing.accounts.getWithLines', {
         id: accountId,
       });
       setDetail(d ?? null);
-      setPayAmount(d?.balance ?? '');
     } catch {
       setDetail(null);
-    } finally {
-      setLoading(false);
     }
   }, [accountId]);
 
@@ -78,288 +179,383 @@ export function SalidaDetailDrawer(props: {
     else setDetail(null);
   }, [accountId, load]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  if (!accountId) return null;
+
+  const total = Number(detail?.total) || 0;
+  const paid = Number(detail?.paid) || 0;
   const balance = Number(detail?.balance) || 0;
   const isCompra = (kind ?? detail?.account.source) === 'compra';
+  const pagada = !!detail && (detail.paymentStatus === 'paid' || balance <= 0.005);
+  const headIcon = isCompra ? 'truck' : 'tag';
+  const medio = paymentMethod ? MEDIO_BY_ID[paymentMethod] : null;
+  const fechaFmt = date ? new Date(date).toLocaleDateString('es-AR') : null;
 
-  const confirmPay = async () => {
-    const amount = Number(payAmount) || 0;
-    if (amount <= 0 || !accountId) return;
+  const confirmPay = async (monto: number, mPay: string) => {
+    if (monto <= 0 || !accountId) return;
     setBusy(true);
     try {
       await actions.execute('billing.payments.record', {
         accountId,
-        amount: String(amount),
-        method: payMethod,
+        amount: String(monto),
+        method: mPay,
       });
       setPaying(false);
       await load();
       onChanged();
     } catch {
-      /* sin feedback duro acá; el caller refresca */
+      /* el caller refresca igual */
     } finally {
       setBusy(false);
     }
   };
 
-  const estadoFooter = () => {
-    if (!detail) return null;
-    if (detail.paymentStatus === 'paid' || balance <= 0.005) {
-      return h(
-        'div',
-        { className: 'flex items-center gap-3' },
-        h(
-          'span',
-          {
-            className:
-              'inline-flex items-center justify-center rounded-full text-cg-green bg-cg-green-bg',
-            style: { width: 32, height: 32 },
-          },
-          h(UI.DynamicIcon, { icon: 'Check', size: 16 } as any)
-        ),
-        h('span', { className: `${SERIF} text-cg-green`, style: { fontSize: 18 } }, 'Pagada')
-      );
-    }
-    return h(
-      'div',
-      { className: 'flex items-center justify-between' },
-      h('span', { className: SECTION_LABEL }, 'Saldo a pagar'),
-      h(
-        'span',
-        { className: `${SERIF} text-cg-danger`, style: { fontSize: 26 } },
-        formatMoney(balance)
-      )
-    );
-  };
-
   return h(
-    UI.Sheet,
-    {
-      open: accountId !== null,
-      onOpenChange: (v: boolean) => !v && onClose(),
-      side: 'right',
-    } as any,
+    'div',
+    { className: 'sal' },
+    h('div', { className: 'sa-scrim', onClick: onClose }),
     h(
-      UI.SheetContent,
-      {
-        style: { width: '480px', maxWidth: '94vw', display: 'flex', flexDirection: 'column' },
-      } as any,
+      'aside',
+      { className: 'sa-drawer', role: 'dialog', 'aria-label': 'Detalle de la salida' },
 
-      // Header
+      // ── Header ──
       h(
-        UI.SheetHeader,
-        null,
-        h('div', { className: `${SECTION_LABEL} mb-1` }, 'SALIDA'),
+        'div',
+        { className: 'sa-drawer-head' },
         h(
-          UI.SheetTitle,
-          null,
+          'div',
+          { className: 'sa-head-top' },
+          h('div', { className: 't-eyebrow', style: { color: 'var(--gold-deep)' } }, 'SALIDA'),
           h(
-            'span',
-            { className: 'flex items-center gap-2' },
+            'button',
+            { className: 'sa-iconbtn', onClick: onClose, title: 'Cerrar' },
+            h(Icon, { name: 'x', size: 16 })
+          )
+        ),
+        h(
+          'div',
+          { className: 'sa-ctx' },
+          h('div', { className: 'sa-ctx-ic' }, h(Icon, { name: headIcon, size: 20 })),
+          h(
+            'div',
+            { style: { minWidth: 0 } },
+            h('h2', { className: 'sa-ctx-title' }, concept ?? 'Salida'),
             h(
-              'span',
-              {
-                className:
-                  'inline-flex items-center justify-center rounded-lg text-cg-text-muted bg-cg-bg-secondary',
-                style: { width: 34, height: 34 },
-              },
-              h(UI.DynamicIcon, { icon: isCompra ? 'Truck' : 'Tag', size: 17 } as any)
-            ),
-            h('span', { className: SERIF, style: { fontSize: 19 } }, concept ?? 'Salida')
+              'div',
+              { className: 'sa-ctx-meta' },
+              h(
+                'span',
+                { className: `badge ${isCompra ? 'badge-neutral' : 'sa-badge-out'} sa-pill` },
+                h(Icon, { name: isCompra ? 'truck' : 'tag', size: 12 }),
+                isCompra ? 'Compra' : 'Gasto'
+              ),
+              fechaFmt &&
+                h(
+                  'span',
+                  { className: 'sa-meta-item' },
+                  h(Icon, { name: 'cal', size: 13 }),
+                  fechaFmt
+                ),
+              medio &&
+                h(
+                  'span',
+                  { className: 'sa-meta-item' },
+                  h(Icon, { name: medio.icon, size: 13 }),
+                  medio.label
+                )
+            )
           )
         )
       ),
 
-      // Body
+      // ── Body ──
       h(
         'div',
-        { style: { flex: 1, overflowY: 'auto' }, className: 'flex flex-col gap-4 py-4' },
-        loading
-          ? h(UI.LoadingOverlay, { variant: 'skeleton', rows: 4 } as any)
-          : detail
+        { className: 'sa-drawer-body' },
+        !detail
+          ? null
+          : isCompra
             ? h(
                 React.Fragment,
                 null,
-                // Ítems (compra) o concepto (gasto)
-                isCompra && detail.lines.length > 0
-                  ? h(
-                      'div',
-                      { className: 'flex flex-col gap-2' },
-                      h('div', { className: SECTION_LABEL }, `Ítems · ${detail.lines.length}`),
-                      ...detail.lines.map((l, i) =>
-                        h(
-                          'div',
-                          {
-                            key: i,
-                            className:
-                              'flex items-center justify-between gap-3 border-b border-cg-border-subtle pb-2 last:border-b-0',
-                          },
-                          h(
-                            'div',
-                            { className: 'min-w-0' },
-                            h(
-                              'div',
-                              { className: 'text-sm text-cg-text font-medium' },
-                              l.description
-                            ),
-                            h(
-                              'div',
-                              { className: 'text-xs text-cg-text-muted font-mono' },
-                              `${Number(l.quantity)} × ${formatMoney(l.unit_price)}`
-                            )
-                          ),
-                          h(
-                            'span',
-                            { className: 'font-mono text-cg-text' },
-                            formatMoney(l.subtotal)
-                          )
-                        )
-                      ),
-                      isCompra &&
-                        h(
-                          'div',
-                          {
-                            className:
-                              'text-xs text-cg-green bg-cg-green-bg rounded-lg px-3 py-2 mt-1',
-                          },
-                          'Los lotes de esta compra entran a Farmacia como stock disponible.'
-                        )
-                    )
-                  : h(
-                      'div',
-                      { className: 'text-sm text-cg-text-muted' },
-                      detail.account.notes || 'Gasto'
-                    )
-              )
-            : h('div', { className: 'text-sm text-cg-text-muted' }, 'No se pudo cargar el detalle.')
-      ),
-
-      // Footer
-      detail &&
-        h(
-          'div',
-          { className: 'flex flex-col gap-3 border-t border-cg-border pt-4' },
-          // Totales
-          h(
-            'div',
-            { className: 'rounded-xl border border-cg-border p-4 flex flex-col gap-2' },
-            h(
-              'div',
-              { className: 'flex items-center justify-between text-sm' },
-              h('span', { className: 'text-cg-text-muted' }, 'Total'),
-              h('span', { className: 'font-mono text-cg-text' }, formatMoney(detail.total))
-            ),
-            Number(detail.paid) > 0.005 &&
-              h(
-                'div',
-                { className: 'flex items-center justify-between text-sm' },
-                h('span', { className: 'text-cg-text-muted' }, 'Pagado'),
-                h('span', { className: 'font-mono text-cg-green' }, `− ${formatMoney(detail.paid)}`)
-              ),
-            h('div', { className: 'border-t border-cg-border my-1' }),
-            estadoFooter()
-          ),
-
-          // Pagos registrados
-          detail.payments.length > 0 &&
-            h(
-              'div',
-              { className: 'flex flex-col gap-1.5' },
-              h('div', { className: SECTION_LABEL }, `Pagos · ${detail.payments.length}`),
-              ...detail.payments.map((p) =>
                 h(
                   'div',
-                  { key: p.id, className: 'flex items-center justify-between text-sm' },
+                  { className: 'sa-sec-label' },
                   h(
                     'span',
-                    { className: 'text-cg-text-muted' },
-                    PAYMENT_METHOD_LABEL[p.method] ?? p.method
+                    { className: 't-section-label', style: { color: 'var(--neutral-500)' } },
+                    'Ítems'
                   ),
-                  h('span', { className: 'font-mono text-cg-text' }, formatMoney(p.amount))
-                )
-              )
-            ),
-
-          // Acción / form de pago
-          paying
-            ? h(
-                'div',
-                {
-                  className:
-                    'flex flex-col gap-2 rounded-xl border border-cg-gold p-3 bg-cg-gold-soft',
-                },
-                h(
-                  'label',
-                  { className: 'block text-xs font-semibold text-cg-text-muted' },
-                  'Cuánto pagás'
+                  h('span', { className: 'sa-count' }, String(detail.lines.length))
                 ),
-                h(UI.Input, {
-                  type: 'number',
-                  min: 0,
-                  value: payAmount,
-                  onChange: (e: any) => setPayAmount(e.target.value),
-                  autoFocus: true,
-                } as any),
-                h(
-                  'label',
-                  { className: 'block text-xs font-semibold text-cg-text-muted mt-1' },
-                  'Con qué'
-                ),
-                h(UI.SegmentedControl, {
-                  value: payMethod,
-                  options: PAYMENT_METHODS,
-                  onChange: (v: string) => setPayMethod(v),
-                  size: 'sm',
-                  'aria-label': 'Medio de pago',
-                } as any),
                 h(
                   'div',
-                  { className: 'flex gap-2 mt-1' },
+                  { className: 'sa-lines' },
+                  ...detail.lines.map((l, i) =>
+                    h(
+                      'div',
+                      { key: i, className: 'sa-line' },
+                      h('div', { className: 'sa-linechip' }, h(Icon, { name: 'box', size: 16 })),
+                      h(
+                        'div',
+                        { style: { minWidth: 0, flex: 1 } },
+                        h('div', { className: 'sa-line-name' }, l.description),
+                        h(
+                          'div',
+                          { className: 'sa-line-meta' },
+                          `${Number(l.quantity)} × ${fmt(l.unit_price)}`
+                        ),
+                        l.source_ref &&
+                          h(
+                            'div',
+                            { className: 'sa-line-lote' },
+                            h(Icon, { name: 'info', size: 12 }),
+                            ` Lote ${l.source_ref}`
+                          )
+                      ),
+                      h('div', { className: 'sa-line-amt' }, fmt(l.subtotal))
+                    )
+                  )
+                ),
+                h(
+                  'div',
+                  { className: 'sa-stock-note' },
+                  h(Icon, { name: 'box', size: 14 }),
                   h(
-                    UI.Button,
-                    {
-                      variant: 'ghost',
-                      size: 'sm',
-                      disabled: busy,
-                      onClick: () => setPaying(false),
-                    } as any,
-                    'Cancelar'
-                  ),
-                  h(
-                    UI.Button,
-                    {
-                      variant: 'brand',
-                      size: 'sm',
-                      disabled: busy || (Number(payAmount) || 0) <= 0,
-                      onClick: () => void confirmPay(),
-                      className: 'flex-1',
-                    } as any,
-                    `Pagar ${(Number(payAmount) || 0) > 0 ? formatMoney(Number(payAmount)) : ''}`
+                    'span',
+                    null,
+                    'Los lotes de esta compra entran a ',
+                    h('strong', null, 'Farmacia'),
+                    ' como stock disponible.'
                   )
                 )
               )
             : h(
+                React.Fragment,
+                null,
+                h(
+                  'div',
+                  { className: 'sa-sec-label' },
+                  h(
+                    'span',
+                    { className: 't-section-label', style: { color: 'var(--neutral-500)' } },
+                    'Detalle'
+                  )
+                ),
+                h(
+                  'div',
+                  { className: 'sa-gasto-card' },
+                  h(
+                    'div',
+                    { className: 'sa-gasto-row' },
+                    h('span', { className: 'sa-gasto-k' }, 'Concepto'),
+                    h('span', { className: 'sa-gasto-v' }, concept ?? 'Gasto')
+                  ),
+                  detail.account.notes &&
+                    h(
+                      'div',
+                      { className: 'sa-gasto-row' },
+                      h('span', { className: 'sa-gasto-k' }, 'Nota'),
+                      h('span', { className: 'sa-gasto-v' }, detail.account.notes)
+                    )
+                )
+              )
+      ),
+
+      // ── Footer ──
+      detail &&
+        h(
+          'div',
+          { className: 'sa-drawer-foot' },
+          h(
+            'div',
+            { className: 'sa-totcard' },
+            h(
+              'div',
+              { className: 'sa-total-row' },
+              h('span', { style: { color: 'var(--neutral-700)', fontSize: 13 } }, 'Total'),
+              h(
+                'span',
+                {
+                  style: {
+                    fontVariantNumeric: 'tabular-nums',
+                    fontSize: 14,
+                    color: 'var(--neutral-950)',
+                    fontWeight: 500,
+                  },
+                },
+                fmt(total)
+              )
+            ),
+            paid > 0.005 &&
+              h(
                 'div',
-                { className: 'flex gap-2' },
+                { className: 'sa-total-row' },
+                h(
+                  'span',
+                  {
+                    style: {
+                      color: 'var(--neutral-700)',
+                      fontSize: 13,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    },
+                  },
+                  h('span', { className: 'sa-paid-ic' }, h(Icon, { name: 'check', size: 11 })),
+                  ' Pagado'
+                ),
+                h(
+                  'span',
+                  {
+                    style: {
+                      fontVariantNumeric: 'tabular-nums',
+                      fontSize: 14,
+                      color: 'var(--teal-deep)',
+                      fontWeight: 500,
+                    },
+                  },
+                  `− ${fmt(paid)}`
+                )
+              ),
+            h('div', { className: 'sa-total-divider' }),
+            pagada
+              ? h(
+                  'div',
+                  { className: 'sa-pagada' },
+                  h('span', { className: 'sa-pagada-ic' }, h(Icon, { name: 'check', size: 17 })),
+                  h(
+                    'div',
+                    null,
+                    h('div', { className: 'sa-pagada-t' }, 'Pagada'),
+                    h(
+                      'div',
+                      { style: { fontSize: 12, color: 'var(--neutral-500)', marginTop: 4 } },
+                      'Salida saldada por completo'
+                    )
+                  )
+                )
+              : h(
+                  'div',
+                  { className: 'sa-saldo-row' },
+                  h(
+                    'div',
+                    null,
+                    h(
+                      'span',
+                      {
+                        className: 't-eyebrow',
+                        style: { color: 'var(--neutral-500)', display: 'block' },
+                      },
+                      'SALDO A PAGAR'
+                    ),
+                    detail.paymentStatus === 'partial' &&
+                      h(
+                        'span',
+                        { style: { fontSize: 11.5, color: 'var(--gold-deep)' } },
+                        'Pago parcial registrado'
+                      )
+                  ),
+                  h('span', { className: 'sa-saldo-num' }, fmt(balance))
+                )
+          ),
+
+          detail.payments.length > 0 &&
+            h(
+              'div',
+              { className: 'sa-pagos' },
+              h(
+                'div',
+                { className: 'sa-sec-label', style: { marginBottom: 10 } },
+                h(
+                  'span',
+                  { className: 't-section-label', style: { color: 'var(--neutral-500)' } },
+                  'Pagos'
+                ),
+                h('span', { className: 'sa-count' }, String(detail.payments.length))
+              ),
+              h(
+                'div',
+                { className: 'sa-pago-list' },
+                ...detail.payments.map((p) =>
+                  h(
+                    'div',
+                    { key: p.id, className: 'sa-pago-row' },
+                    h(
+                      'span',
+                      { className: 'sa-pago-chip' },
+                      h(Icon, {
+                        name: (MEDIO_BY_ID[p.method] || MEDIO_BY_ID.efectivo).icon,
+                        size: 15,
+                      })
+                    ),
+                    h(
+                      'div',
+                      { style: { flex: 1, minWidth: 0 } },
+                      h(
+                        'div',
+                        { style: { fontSize: 13, color: 'var(--neutral-950)', fontWeight: 500 } },
+                        (MEDIO_BY_ID[p.method] || { label: p.method }).label
+                      ),
+                      p.paid_at &&
+                        h(
+                          'div',
+                          { style: { fontSize: 11.5, color: 'var(--neutral-500)' } },
+                          new Date(p.paid_at).toLocaleDateString('es-AR')
+                        )
+                    ),
+                    h(
+                      'span',
+                      {
+                        style: {
+                          fontVariantNumeric: 'tabular-nums',
+                          fontSize: 13.5,
+                          color: 'var(--neutral-950)',
+                          fontWeight: 500,
+                        },
+                      },
+                      fmt(p.amount)
+                    )
+                  )
+                )
+              )
+            ),
+
+          paying
+            ? h(PagoForm, {
+                saldo: balance,
+                busy,
+                onCancel: () => setPaying(false),
+                onConfirm: (monto: number, mPay: string) => void confirmPay(monto, mPay),
+              })
+            : h(
+                'div',
+                { style: { display: 'flex', gap: 8, marginTop: 14 } },
                 balance > 0.005 &&
                   h(
-                    UI.Button,
+                    'button',
                     {
-                      variant: 'brand',
-                      size: 'sm',
+                      className: 'btn btn-dark btn-lg',
+                      style: { flex: 1 },
                       onClick: () => setPaying(true),
-                      className: 'flex-1',
-                    } as any,
-                    h(UI.DynamicIcon, { icon: 'ArrowUpFromLine', size: 14 } as any),
-                    ` Pagar ${formatMoney(balance)}`
+                    },
+                    h(Icon, { name: 'out', size: 15 }),
+                    ` Pagar ${fmt(balance)}`
                   ),
                 h(
-                  UI.Button,
+                  'button',
                   {
-                    variant: 'outline',
-                    size: 'sm',
+                    className: 'btn btn-secondary btn-lg',
+                    style: { flex: balance > 0.005 ? '0 0 auto' : 1 },
                     onClick: onClose,
-                    className: balance > 0.005 ? '' : 'flex-1',
-                  } as any,
+                  },
                   'Cerrar'
                 )
               )

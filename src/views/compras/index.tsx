@@ -1,10 +1,10 @@
-import { getHostReact, getHostUI, usePlugin } from '@coongro/plugin-sdk';
+import { getHostReact, getHostUI, usePlugin, actions } from '@coongro/plugin-sdk';
 
-const UI = getHostUI();
+import { RegistrarDrawer, type SubmitPayload } from '../../components/RegistrarDrawer.js';
 import { SalidaDetailDrawer } from '../../components/SalidaDetailDrawer.js';
 import { SalidasSummaryCards } from '../../components/SalidasSummaryCards.js';
 import type { EstadoFilter } from '../../components/SalidasSummaryCards.js';
-import { PAYMENT_METHODS, GASTO_CATEGORIES } from '../../constants.js';
+import { PAYMENT_METHODS } from '../../constants.js';
 import { createSalida } from '../../data/createSalida.js';
 import { useProductOptions } from '../../data/useProductOptions.js';
 import { useSalidas } from '../../data/useSalidas.js';
@@ -12,32 +12,12 @@ import type { SalidaRow } from '../../data/useSalidas.js';
 import { useSuppliers } from '../../data/useSuppliers.js';
 import { formatMoney, formatDate } from '../../utils/money.js';
 
+const UI = getHostUI();
 const React = getHostReact();
 const { useState, useMemo } = React;
 const h = React.createElement;
 
 const SERIF = 'font-serif font-black tracking-tight';
-const FIELD_LABEL = 'block text-xs font-semibold text-cg-text-muted mb-1';
-
-type Mode = 'gasto' | 'compra';
-
-interface LineState {
-  productId: string;
-  description: string;
-  quantity: string;
-  unitCost: string;
-  lote: string;
-  expiration: string;
-}
-
-const emptyLine = (): LineState => ({
-  productId: '',
-  description: '',
-  quantity: '1',
-  unitCost: '',
-  lote: '',
-  expiration: '',
-});
 
 /** Badge de estado de la salida (pagada / parcial · saldo / a pagar). */
 function estadoBadge(s: SalidaRow) {
@@ -59,31 +39,13 @@ export function SalidasView() {
   const productOptions = useProductOptions();
   const { toast } = usePlugin();
 
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<Mode>('gasto');
+  const [registrando, setRegistrando] = useState(false);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>('todas');
   const [deudaOpen, setDeudaOpen] = useState(true);
   // Salida abierta en el drawer de detalle (click en una fila).
   const [detailRow, setDetailRow] = useState<SalidaRow | null>(null);
-
-  // Estado del drawer (compartido gasto/compra)
-  const [medio, setMedio] = useState('efectivo');
-  const [pagada, setPagada] = useState(true);
-  // Compra
-  const [supplierId, setSupplierId] = useState('');
-  const [lines, setLines] = useState<LineState[]>([emptyLine()]);
-  // Gasto
-  const [gastoCategory, setGastoCategory] = useState('fijos');
-  const [gastoConcept, setGastoConcept] = useState('');
-  const [gastoAmount, setGastoAmount] = useState('');
-
-  const compraTotal = useMemo(
-    () => lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitCost) || 0), 0),
-    [lines]
-  );
-  const total = mode === 'compra' ? compraTotal : Number(gastoAmount) || 0;
 
   const metrics = useMemo(() => {
     let aPagar = 0;
@@ -114,61 +76,37 @@ export function SalidasView() {
 
   const deudaTotal = useMemo(() => deuda.reduce((s, d) => s + (Number(d.saldo) || 0), 0), [deuda]);
 
-  const openForm = () => {
-    setMode('gasto');
-    setMedio('efectivo');
-    setPagada(true);
-    setSupplierId('');
-    setLines([emptyLine()]);
-    setGastoCategory('fijos');
-    setGastoConcept('');
-    setGastoAmount('');
-    setOpen(true);
-  };
-
-  const setLine = (i: number, patch: Partial<LineState>) =>
-    setLines((prev: LineState[]) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  const onPickProduct = (i: number, productId: string) => {
-    const p = productOptions.find((o) => o.id === productId);
-    setLine(i, { productId, description: p?.name ?? '', unitCost: p?.purchasePrice ?? '' });
-  };
-  const addLine = () => setLines((prev: LineState[]) => [...prev, emptyLine()]);
-  const removeLine = (i: number) =>
-    setLines((prev: LineState[]) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
-
-  const save = async () => {
-    if (mode === 'gasto' && (Number(gastoAmount) || 0) <= 0) {
-      toast.warning('Falta el monto', 'Ingresá el monto del gasto.');
-      return;
-    }
-    if (mode === 'compra' && compraTotal <= 0) {
-      toast.warning('Falta el detalle', 'Agregá al menos un ítem con cantidad y costo.');
-      return;
-    }
+  // Registrar: el RegistrarDrawer recolecta el form y delega acá (createSalida + toast +
+  // reload). Si el proveedor se cargó libre (sin id), se crea primero en purchases.suppliers.
+  const onSubmit = async (payload: SubmitPayload) => {
     setBusy(true);
     try {
+      let supplierId = payload.supplierId;
+      if (payload.mode === 'compra' && !supplierId && payload.supplierName) {
+        try {
+          const s = await actions.execute<{ id: string }>('purchases.suppliers.create', {
+            data: { name: payload.supplierName },
+          });
+          supplierId = s?.id ?? null;
+        } catch {
+          /* si no se pudo crear, la compra queda sin proveedor asociado */
+        }
+      }
       await createSalida({
-        mode,
-        medio,
-        pagada,
-        gastoCategory,
-        concept: gastoConcept,
-        amount: Number(gastoAmount) || 0,
-        supplierId: supplierId || null,
-        items: lines.map((l) => ({
-          productId: l.productId || null,
-          description: l.description,
-          quantity: Number(l.quantity) || 0,
-          unitCost: Number(l.unitCost) || 0,
-          lote: l.lote || null,
-          expiration: l.expiration || null,
-        })),
+        mode: payload.mode,
+        medio: payload.medio,
+        pagada: payload.pagada,
+        gastoCategory: payload.gastoCategory,
+        concept: payload.concept,
+        amount: payload.amount,
+        supplierId,
+        items: payload.items,
       });
       toast.success(
-        pagada ? 'Salida registrada' : 'Salida registrada · queda a pagar',
-        formatMoney(total)
+        payload.pagada ? 'Salida registrada' : 'Salida registrada · queda a pagar',
+        formatMoney(payload.total)
       );
-      setOpen(false);
+      setRegistrando(false);
       await reload();
     } catch {
       toast.error('No se pudo registrar', 'Intentá de nuevo.');
@@ -231,14 +169,48 @@ export function SalidasView() {
     []
   );
 
-  const modeOptions = [
-    { value: 'gasto', label: 'Gasto' },
-    { value: 'compra', label: 'Compra' },
-  ];
-  const estadoOptions = [
-    { value: 'true', label: mode === 'compra' ? 'Ya pagué' : 'Pagada' },
-    { value: 'false', label: mode === 'compra' ? 'Queda a pagar' : 'A pagar' },
-  ];
+  // Render mobile: cada salida como card (la DataTable usa esto en pantallas chicas).
+  const mobileRender = (s: SalidaRow) =>
+    h(
+      'div',
+      { className: 'flex flex-col gap-1.5' },
+      h(
+        'div',
+        { className: 'flex items-center justify-between gap-2' },
+        h('span', { className: 'font-medium text-cg-text' }, s.concept),
+        h('span', { className: 'font-mono font-semibold text-cg-text' }, formatMoney(s.total))
+      ),
+      h(
+        'div',
+        { className: 'flex items-center gap-2 flex-wrap' },
+        s.kind === 'compra'
+          ? h(
+              UI.Badge,
+              { variant: 'secondary', size: 'sm' } as any,
+              h(UI.DynamicIcon, { icon: 'Truck', size: 11 } as any),
+              ' Compra'
+            )
+          : h(
+              UI.Badge,
+              { variant: 'outline', size: 'sm' } as any,
+              h(UI.DynamicIcon, { icon: 'Tag', size: 11 } as any),
+              ' Gasto'
+            ),
+        estadoBadge(s)
+      ),
+      h(
+        'div',
+        { className: 'text-xs', style: { color: 'var(--cg-text-muted)' } },
+        [
+          formatDate(s.date),
+          s.paymentMethod
+            ? (PAYMENT_METHODS.find((m) => m.value === s.paymentMethod)?.label ?? s.paymentMethod)
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      )
+    );
 
   return h(
     'div',
@@ -263,7 +235,7 @@ export function SalidasView() {
         ),
         h(
           UI.Button,
-          { variant: 'brand', size: 'sm', onClick: openForm } as any,
+          { variant: 'brand', size: 'sm', onClick: () => setRegistrando(true) } as any,
           h(UI.DynamicIcon, { icon: 'Plus', size: 14 } as any),
           ' Registrar salida'
         )
@@ -387,334 +359,28 @@ export function SalidasView() {
             filteredDescription: 'Probá cambiar el estado o la búsqueda.',
           },
           skeletonRows: 7,
+          mobileRender,
         } as any)
       )
     ),
 
-    // Drawer lateral — Registrar salida
-    h(
-      UI.Sheet,
-      { open, onOpenChange: (v: boolean) => setOpen(v), side: 'right' } as any,
-      h(
-        UI.SheetContent,
-        {
-          style: { width: '512px', maxWidth: '94vw', display: 'flex', flexDirection: 'column' },
-        } as any,
-        h(
-          UI.SheetHeader,
-          null,
-          h(
-            'div',
-            { className: 'text-[11px] font-bold tracking-wider uppercase text-cg-text-muted mb-1' },
-            'SALIDA'
-          ),
-          h(
-            UI.SheetTitle,
-            null,
-            h('span', { className: SERIF, style: { fontSize: '21px' } }, 'Registrar salida')
-          )
-        ),
-
-        h(
-          'div',
-          { style: { flex: 1, overflowY: 'auto' }, className: 'flex flex-col gap-4 py-4' },
-
-          // Modo
-          h(UI.SegmentedControl, {
-            value: mode,
-            options: modeOptions,
-            onChange: (v: string) => setMode(v as Mode),
-            size: 'sm',
-            'aria-label': 'Tipo de salida',
-          } as any),
-
-          // Gasto
-          mode === 'gasto' &&
-            h(
-              'div',
-              { className: 'flex flex-col gap-3' },
-              h(
-                'div',
-                null,
-                h('label', { className: FIELD_LABEL }, 'Tipo de gasto'),
-                h(
-                  UI.Select,
-                  { value: gastoCategory, onValueChange: setGastoCategory } as any,
-                  ...GASTO_CATEGORIES.map((g) =>
-                    h(UI.SelectItem, { key: g.value, value: g.value } as any, g.label)
-                  )
-                )
-              ),
-              h(
-                'div',
-                null,
-                h('label', { className: FIELD_LABEL }, 'Monto'),
-                h(UI.Input, {
-                  type: 'number',
-                  min: 0,
-                  step: '0.01',
-                  value: gastoAmount,
-                  onChange: (e: any) => setGastoAmount(e.target.value),
-                  placeholder: '0',
-                } as any)
-              ),
-              h(
-                'div',
-                null,
-                h('label', { className: FIELD_LABEL }, 'Concepto'),
-                h(UI.Input, {
-                  value: gastoConcept,
-                  onChange: (e: any) => setGastoConcept(e.target.value),
-                  placeholder: 'Ej: Luz, alquiler, retiro de socio…',
-                } as any)
-              )
-            ),
-
-          // Compra
-          mode === 'compra' &&
-            h(
-              'div',
-              { className: 'flex flex-col gap-4' },
-              h(
-                'div',
-                null,
-                h('label', { className: FIELD_LABEL }, 'Proveedor'),
-                h(
-                  UI.Select,
-                  {
-                    value: supplierId,
-                    onValueChange: setSupplierId,
-                    placeholder: 'Elegí (opcional)',
-                  } as any,
-                  ...suppliers.map((s) =>
-                    h(UI.SelectItem, { key: s.id, value: s.id } as any, s.name)
-                  )
-                )
-              ),
-              h(
-                'div',
-                { className: 'flex flex-col gap-2' },
-                h('label', { className: FIELD_LABEL }, 'Ítems'),
-                ...lines.map((l, i) => {
-                  const sub = (Number(l.quantity) || 0) * (Number(l.unitCost) || 0);
-                  return h(
-                    'div',
-                    {
-                      key: i,
-                      className:
-                        'flex flex-col gap-2 rounded-lg border border-cg-border bg-cg-bg-secondary p-3',
-                    },
-                    // Producto + quitar
-                    h(
-                      'div',
-                      { className: 'flex items-center gap-2' },
-                      h(
-                        'div',
-                        { className: 'flex-1 min-w-0' },
-                        productOptions.length > 0
-                          ? h(
-                              UI.Select,
-                              {
-                                value: l.productId,
-                                onValueChange: (v: string) => onPickProduct(i, v),
-                                placeholder: 'Producto',
-                              } as any,
-                              ...productOptions.map((o) =>
-                                h(UI.SelectItem, { key: o.id, value: o.id } as any, o.name)
-                              )
-                            )
-                          : h(UI.Input, {
-                              value: l.description,
-                              onChange: (e: any) => setLine(i, { description: e.target.value }),
-                              placeholder: 'Descripción',
-                            } as any)
-                      ),
-                      h(
-                        UI.IconButton,
-                        {
-                          variant: 'ghost',
-                          size: 'sm',
-                          'aria-label': 'Quitar ítem',
-                          disabled: lines.length === 1,
-                          onClick: () => removeLine(i),
-                        } as any,
-                        h(UI.DynamicIcon, { icon: 'Trash2', size: 13 } as any)
-                      )
-                    ),
-                    // Cantidad + costo
-                    h(
-                      'div',
-                      { className: 'grid grid-cols-2 gap-2' },
-                      h(
-                        'div',
-                        null,
-                        h('label', { className: FIELD_LABEL }, 'Cantidad'),
-                        h(UI.Input, {
-                          type: 'number',
-                          min: 0,
-                          step: '1',
-                          value: l.quantity,
-                          onChange: (e: any) => setLine(i, { quantity: e.target.value }),
-                        } as any)
-                      ),
-                      h(
-                        'div',
-                        null,
-                        h('label', { className: FIELD_LABEL }, 'Costo unit.'),
-                        h(UI.Input, {
-                          type: 'number',
-                          min: 0,
-                          step: '0.01',
-                          value: l.unitCost,
-                          onChange: (e: any) => setLine(i, { unitCost: e.target.value }),
-                          placeholder: '0',
-                        } as any)
-                      )
-                    ),
-                    // Lote + vencimiento (opcional → entra a products.batches)
-                    h(
-                      'div',
-                      { className: 'grid grid-cols-2 gap-2' },
-                      h(
-                        'div',
-                        null,
-                        h(
-                          'label',
-                          { className: FIELD_LABEL },
-                          'N° de lote',
-                          h('span', { className: 'font-normal text-cg-text-muted' }, ' · opcional')
-                        ),
-                        h(UI.Input, {
-                          value: l.lote,
-                          onChange: (e: any) => setLine(i, { lote: e.target.value }),
-                          placeholder: 'L-0000',
-                        } as any)
-                      ),
-                      h(
-                        'div',
-                        null,
-                        h('label', { className: FIELD_LABEL }, 'Vencimiento'),
-                        h(UI.Input, {
-                          type: 'date',
-                          value: l.expiration,
-                          onChange: (e: any) => setLine(i, { expiration: e.target.value }),
-                        } as any)
-                      )
-                    ),
-                    // Subtotal del ítem
-                    sub > 0 &&
-                      h(
-                        'div',
-                        {
-                          className:
-                            'flex items-center justify-between pt-1.5 border-t border-cg-border text-xs',
-                        },
-                        h(
-                          'span',
-                          { className: 'text-cg-text-muted font-mono' },
-                          `${Number(l.quantity) || 0} × ${formatMoney(Number(l.unitCost) || 0)}`
-                        ),
-                        h(
-                          'span',
-                          { className: 'font-mono font-semibold text-cg-text' },
-                          formatMoney(sub)
-                        )
-                      )
-                  );
-                }),
-                h(
-                  'div',
-                  null,
-                  h(
-                    UI.Button,
-                    { variant: 'outline', size: 'sm', onClick: addLine } as any,
-                    h(UI.DynamicIcon, { icon: 'Plus', size: 13 } as any),
-                    ' Agregar ítem'
-                  )
-                )
-              )
-            ),
-
-          // Medio
-          h(
-            'div',
-            null,
-            h('label', { className: FIELD_LABEL }, 'Medio'),
-            h(UI.SegmentedControl, {
-              value: medio,
-              options: PAYMENT_METHODS,
-              onChange: (v: string) => setMedio(v),
-              size: 'sm',
-              'aria-label': 'Medio de pago',
-            } as any)
-          ),
-
-          // Estado (pagada / a-pagar) — reusa el ledger payable de billing
-          h(
-            'div',
-            null,
-            h('label', { className: FIELD_LABEL }, 'Estado'),
-            h(UI.SegmentedControl, {
-              value: String(pagada),
-              options: estadoOptions,
-              onChange: (v: string) => setPagada(v === 'true'),
-              size: 'sm',
-              'aria-label': 'Estado de la salida',
-            } as any)
-          ),
-
-          // Aviso de impacto
-          h(
-            'div',
-            {
-              className:
-                'text-xs text-cg-text-muted bg-cg-bg-secondary rounded-lg px-3 py-2 border border-cg-border',
-            },
-            !pagada
-              ? 'Queda a pagar — suma a las salidas pendientes, no toca la caja hoy.'
-              : medio === 'efectivo'
-                ? `En efectivo, se registra un egreso de ${formatMoney(total)} en la caja.`
-                : 'Pagada por banco/tarjeta — no toca la caja.'
-          )
-        ),
-
-        // Footer
-        h(
-          'div',
-          { className: 'flex items-center justify-between gap-4 border-t border-cg-border pt-4' },
-          h(
-            'span',
-            { className: 'font-mono font-bold text-base text-cg-text' },
-            `Total ${formatMoney(total)}`
-          ),
-          h(
-            'div',
-            { className: 'flex gap-2' },
-            h(
-              UI.Button,
-              {
-                variant: 'ghost',
-                size: 'sm',
-                disabled: busy,
-                onClick: () => setOpen(false),
-              } as any,
-              'Cancelar'
-            ),
-            h(
-              UI.Button,
-              { variant: 'brand', size: 'sm', disabled: busy, onClick: () => void save() } as any,
-              'Registrar salida'
-            )
-          )
-        )
-      )
-    ),
+    // Drawer lateral — Registrar salida (formato del diseño, sobre tokens cg-*)
+    registrando &&
+      h(RegistrarDrawer, {
+        onClose: () => setRegistrando(false),
+        onSubmit: (p: SubmitPayload) => void onSubmit(p),
+        suppliers,
+        products: productOptions,
+        busy,
+      }),
 
     // Drawer de detalle — click en una fila abre el detalle + permite registrar pago.
     h(SalidaDetailDrawer, {
       accountId: detailRow?.id ?? null,
       concept: detailRow?.concept,
       kind: detailRow?.kind,
+      date: detailRow?.date,
+      paymentMethod: detailRow?.paymentMethod,
       onClose: () => setDetailRow(null),
       onChanged: () => void reload(),
     })
