@@ -115,6 +115,13 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
   // 2) Líneas.
   if (isCompra) {
     for (const it of items) {
+      // Lote como texto de display, guardado en source_ref para mostrarlo en el detalle
+      // ("L-4471 · vence 12/2026"). venc YYYY-MM-DD → MM/AAAA.
+      const venc = it.expiration?.trim()
+        ? it.expiration.slice(0, 7).split('-').reverse().join('/')
+        : '';
+      const vencSuffix = venc ? ` · vence ${venc}` : '';
+      const loteRef = it.lote?.trim() ? `${it.lote.trim()}${vencSuffix}` : null;
       await actions.execute('billing.lines.add', {
         accountId,
         productId: it.productId,
@@ -123,6 +130,7 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
         unitPrice: String(it.unitCost),
         subtotal: String(it.quantity * it.unitCost),
         sourceType: 'compra',
+        sourceRef: loteRef,
       });
       // Alimentar stock genérico (solo si la línea está atada a un producto).
       await feedStock(accountId, it);

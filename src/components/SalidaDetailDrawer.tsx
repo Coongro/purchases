@@ -2,7 +2,7 @@ import { getHostReact, getHostUI, actions } from '@coongro/plugin-sdk';
 
 const UI = getHostUI();
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL } from '../constants.js';
-import { formatMoney } from '../utils/money.js';
+import { formatMoney, formatDate } from '../utils/money.js';
 
 const React = getHostReact();
 const { useState, useEffect, useCallback } = React;
@@ -16,6 +16,8 @@ interface AccountLine {
   quantity: string;
   unit_price: string;
   subtotal: string;
+  /** Lote/vencimiento de la compra, guardado por createSalida para mostrarlo acá. */
+  source_ref: string | null;
 }
 interface Payment {
   id: string;
@@ -42,13 +44,15 @@ interface SalidaDetail {
 export function SalidaDetailDrawer(props: {
   /** id de cuenta a mostrar; null = cerrado. */
   accountId: string | null;
-  /** Concepto resuelto (proveedor o gasto) + tipo, del row — para el header. */
+  /** Concepto resuelto (proveedor o gasto) + tipo + fecha + medio, del row — para el header. */
   concept?: string;
   kind?: 'compra' | 'gasto';
+  date?: string;
+  paymentMethod?: string | null;
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { accountId, concept, kind, onClose, onChanged } = props;
+  const { accountId, concept, kind, date, paymentMethod, onClose, onChanged } = props;
   const [detail, setDetail] = useState<SalidaDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -144,27 +148,59 @@ export function SalidaDetailDrawer(props: {
         style: { width: '480px', maxWidth: '94vw', display: 'flex', flexDirection: 'column' },
       } as any,
 
-      // Header
+      // Header: chip de icono + título serif + badges (tipo · fecha · medio)
       h(
         UI.SheetHeader,
         null,
-        h('div', { className: `${SECTION_LABEL} mb-1` }, 'SALIDA'),
+        h(
+          'div',
+          { className: `${SECTION_LABEL} mb-2`, style: { color: 'var(--cg-gold-deep)' } },
+          'SALIDA'
+        ),
         h(
           UI.SheetTitle,
           null,
           h(
-            'span',
-            { className: 'flex items-center gap-2' },
+            'div',
+            { className: 'flex items-start gap-3' },
             h(
               'span',
               {
                 className:
-                  'inline-flex items-center justify-center rounded-lg text-cg-text-muted bg-cg-bg-secondary',
-                style: { width: 34, height: 34 },
+                  'inline-flex items-center justify-center rounded-xl text-cg-text-muted bg-cg-bg-secondary border border-cg-border shrink-0',
+                style: { width: 44, height: 44 },
               },
-              h(UI.DynamicIcon, { icon: isCompra ? 'Truck' : 'Tag', size: 17 } as any)
+              h(UI.DynamicIcon, { icon: isCompra ? 'Truck' : 'Tag', size: 20 } as any)
             ),
-            h('span', { className: SERIF, style: { fontSize: 19 } }, concept ?? 'Salida')
+            h(
+              'div',
+              { className: 'min-w-0 flex flex-col gap-1.5' },
+              h('span', { className: SERIF, style: { fontSize: 22 } }, concept ?? 'Salida'),
+              h(
+                'div',
+                { className: 'flex items-center gap-2 flex-wrap' },
+                h(
+                  UI.Badge,
+                  { variant: isCompra ? 'secondary' : 'outline' } as any,
+                  h(UI.DynamicIcon, { icon: isCompra ? 'Truck' : 'Tag', size: 11 } as any),
+                  isCompra ? ' Compra' : ' Gasto'
+                ),
+                date &&
+                  h(
+                    'span',
+                    { className: 'inline-flex items-center gap-1 text-xs text-cg-text-muted' },
+                    h(UI.DynamicIcon, { icon: 'Calendar', size: 12 } as any),
+                    formatDate(date)
+                  ),
+                paymentMethod &&
+                  h(
+                    'span',
+                    { className: 'inline-flex items-center gap-1 text-xs text-cg-text-muted' },
+                    h(UI.DynamicIcon, { icon: 'CreditCard', size: 12 } as any),
+                    PAYMENT_METHOD_LABEL[paymentMethod] ?? paymentMethod
+                  )
+              )
+            )
           )
         )
       ),
@@ -191,11 +227,20 @@ export function SalidaDetailDrawer(props: {
                           {
                             key: i,
                             className:
-                              'flex items-center justify-between gap-3 border-b border-cg-border-subtle pb-2 last:border-b-0',
+                              'flex items-start gap-3 border-b border-cg-border-subtle pb-2.5 last:border-b-0',
                           },
                           h(
+                            'span',
+                            {
+                              className:
+                                'inline-flex items-center justify-center rounded-lg text-cg-text-muted bg-cg-bg-secondary border border-cg-border shrink-0',
+                              style: { width: 34, height: 34, marginTop: 1 },
+                            },
+                            h(UI.DynamicIcon, { icon: 'Box', size: 15 } as any)
+                          ),
+                          h(
                             'div',
-                            { className: 'min-w-0' },
+                            { className: 'min-w-0 flex-1' },
                             h(
                               'div',
                               { className: 'text-sm text-cg-text font-medium' },
@@ -205,11 +250,21 @@ export function SalidaDetailDrawer(props: {
                               'div',
                               { className: 'text-xs text-cg-text-muted font-mono' },
                               `${Number(l.quantity)} × ${formatMoney(l.unit_price)}`
-                            )
+                            ),
+                            l.source_ref &&
+                              h(
+                                'span',
+                                {
+                                  className:
+                                    'inline-flex items-center gap-1 text-xs text-cg-text-muted bg-cg-bg-secondary border border-cg-border rounded px-2 py-0.5 mt-1.5',
+                                },
+                                h(UI.DynamicIcon, { icon: 'Info', size: 11 } as any),
+                                `Lote ${l.source_ref}`
+                              )
                           ),
                           h(
                             'span',
-                            { className: 'font-mono text-cg-text' },
+                            { className: 'font-mono text-cg-text shrink-0' },
                             formatMoney(l.subtotal)
                           )
                         )

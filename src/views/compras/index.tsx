@@ -715,6 +715,8 @@ export function SalidasView() {
       accountId: detailRow?.id ?? null,
       concept: detailRow?.concept,
       kind: detailRow?.kind,
+      date: detailRow?.date,
+      paymentMethod: detailRow?.paymentMethod,
       onClose: () => setDetailRow(null),
       onChanged: () => void reload(),
     })
