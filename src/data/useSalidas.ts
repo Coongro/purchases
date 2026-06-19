@@ -3,57 +3,82 @@ import { getHostReact, actions } from '@coongro/plugin-sdk';
 const React = getHostReact();
 const { useState, useEffect, useCallback, useRef } = React;
 
-/** Una salida unificada: compra a proveedor o gasto simple. */
+export type SalidaEstado = 'pagada' | 'parcial' | 'apagar';
+
+/** Una salida = una cuenta por pagar (billing, direction='payable'). */
 export interface SalidaRow {
   id: string;
   kind: 'compra' | 'gasto';
   date: string;
-  /** Proveedor (compra) o concepto/categoría (gasto). */
+  /** Proveedor (compra) o concepto (gasto). */
   concept: string;
-  paymentMethod: string | null;
+  estado: SalidaEstado;
   total: string;
+  paid: string;
+  balance: string;
+  /** Medio del último pago, si está pagada (null si queda a pagar). */
+  paymentMethod: string | null;
 }
 
-interface RawPurchase {
+/** Deuda agrupada por proveedor/concepto, para el panel "A pagar — por proveedor". */
+export interface DeudaRow {
+  key: string;
+  name: string;
+  saldo: string;
+  parcial: boolean;
+}
+
+interface RawAccount {
   id: string;
-  supplier_id: string | null;
-  purchase_date: string;
-  payment_method: string;
-  total: string;
+  contact_id: string | null;
+  source: string;
   notes: string | null;
+  opened_at: string;
+  total: string;
+  paid: string;
+  balance: string;
+  paymentStatus: string; // 'na' | 'unpaid' | 'partial' | 'paid'
+}
+interface RawPayment {
+  id: string;
+  account_id: string;
+  method: string;
+  paid_at: string;
 }
 interface RawSupplier {
   id: string;
   name: string;
 }
-interface RawExpense {
-  id: string;
-  amount: string;
-  category: string;
-  spent_at: string;
-  notes: string | null;
+interface RawDebtor {
+  contact_id: string | null;
+  debt: string;
+  account_count: number;
 }
 
 export interface UseSalidasResult {
   rows: SalidaRow[];
+  deuda: DeudaRow[];
   loading: boolean;
   error: string | null;
   reload: () => Promise<void>;
 }
 
-/** Categoría que usa createPurchase para el egreso de caja de una compra en efectivo. */
-const PURCHASE_EXPENSE_CATEGORY = 'proveedor';
+/** paymentStatus de billing → estado de Salidas. */
+function toEstado(paymentStatus: string, balance: string): SalidaEstado {
+  if (paymentStatus === 'paid') return 'pagada';
+  if (paymentStatus === 'partial') return 'parcial';
+  // 'unpaid' / 'na' con saldo = a pagar; sin saldo (na sin líneas) lo tratamos a-pagar igual.
+  return Number(balance) > 0.005 ? 'apagar' : 'pagada';
+}
 
 /**
- * Lista unificada de SALIDAS = compras (purchases.records) + gastos (billing.expenses),
- * ordenadas por fecha desc. Los egresos con categoría 'proveedor' se EXCLUYEN: son los
- * que genera automáticamente una compra en efectivo, ya representados por su compra (si
- * no, la compra aparecería dos veces). billing es blando: si no está, se listan solo
- * compras. Ver memoria salidas_entity_spec_coong212 para el modelo completo (tabla
- * `salida` propia + estado/medio, diferido).
+ * Salidas = cuentas POR PAGAR del ledger de billing (direction='payable'). Reusa el mismo
+ * motor de Cobros (cuenta+líneas+pagos→estado). Resuelve nombre de proveedor contra
+ * purchases.suppliers y el medio del último pago. billing es blando: si no está, lista vacía.
  */
 export function useSalidas(): UseSalidasResult {
   const [rows, setRows] = useState<SalidaRow[]>([]);
+  const [deuda, setDeuda] = useState<DeudaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
@@ -64,40 +89,51 @@ export function useSalidas(): UseSalidasResult {
     setLoading(true);
     setError(null);
     try {
-      const [purchases, suppliers] = await Promise.all([
-        actions.execute<RawPurchase[]>('purchases.records.listWithTotals'),
-        actions.execute<RawSupplier[]>('purchases.suppliers.list'),
+      const [accounts, payments, suppliers, debtors] = await Promise.all([
+        actions.execute<RawAccount[]>('billing.accounts.listWithTotals', { direction: 'payable' }),
+        actions.execute<RawPayment[]>('billing.payments.list').catch(() => [] as RawPayment[]),
+        actions.execute<RawSupplier[]>('purchases.suppliers.list').catch(() => [] as RawSupplier[]),
+        actions
+          .execute<RawDebtor[]>('billing.accounts.listDebtors', { direction: 'payable' })
+          .catch(() => [] as RawDebtor[]),
       ]);
-      const nameById = new Map((suppliers ?? []).map((s) => [s.id, s.name]));
 
-      const compras: SalidaRow[] = (purchases ?? []).map((p) => ({
-        id: `compra:${p.id}`,
-        kind: 'compra',
-        date: p.purchase_date,
-        concept: p.supplier_id ? (nameById.get(p.supplier_id) ?? 'Proveedor') : 'Compra',
-        paymentMethod: p.payment_method,
-        total: p.total,
-      }));
-
-      let gastos: SalidaRow[] = [];
-      try {
-        const expenses = await actions.execute<RawExpense[]>('billing.expenses.list');
-        gastos = (expenses ?? [])
-          .filter((e) => e.category !== PURCHASE_EXPENSE_CATEGORY)
-          .map((e) => ({
-            id: `gasto:${e.id}`,
-            kind: 'gasto',
-            date: e.spent_at,
-            concept: e.notes?.trim() || e.category,
-            paymentMethod: null,
-            total: e.amount,
-          }));
-      } catch {
-        // billing no disponible: solo compras.
+      const supplierName = new Map((suppliers ?? []).map((s) => [s.id, s.name]));
+      // Medio del último pago por cuenta (los pagos vienen del más reciente al más viejo).
+      const medioByAccount = new Map<string, string>();
+      for (const p of payments ?? []) {
+        if (!medioByAccount.has(p.account_id)) medioByAccount.set(p.account_id, p.method);
       }
 
-      const all = [...compras, ...gastos].sort((a, b) => (a.date < b.date ? 1 : -1));
-      setRows(all);
+      const conceptOf = (a: RawAccount) =>
+        a.source === 'compra'
+          ? a.contact_id
+            ? (supplierName.get(a.contact_id) ?? 'Proveedor')
+            : 'Compra'
+          : a.notes?.trim() || 'Gasto';
+
+      const mapped: SalidaRow[] = (accounts ?? []).map((a) => ({
+        id: a.id,
+        kind: a.source === 'compra' ? 'compra' : 'gasto',
+        date: a.opened_at,
+        concept: conceptOf(a),
+        estado: toEstado(a.paymentStatus, a.balance),
+        total: a.total,
+        paid: a.paid,
+        balance: a.balance,
+        paymentMethod: medioByAccount.get(a.id) ?? null,
+      }));
+      mapped.sort((x, y) => (x.date < y.date ? 1 : -1));
+      setRows(mapped);
+
+      setDeuda(
+        (debtors ?? []).map((d) => ({
+          key: d.contact_id ?? 'gasto',
+          name: d.contact_id ? (supplierName.get(d.contact_id) ?? 'Proveedor') : 'Gastos varios',
+          saldo: d.debt,
+          parcial: false,
+        }))
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar las salidas');
     } finally {
@@ -110,5 +146,5 @@ export function useSalidas(): UseSalidasResult {
     void reload();
   }, [reload]);
 
-  return { rows, loading, error, reload };
+  return { rows, deuda, loading, error, reload };
 }
