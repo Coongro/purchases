@@ -309,7 +309,7 @@ export function SalidasView() {
                       'flex items-center gap-3 py-2.5 border-b border-cg-border-subtle last:border-b-0',
                   },
                   h(UI.DynamicIcon, {
-                    icon: 'Truck',
+                    icon: 'Store',
                     size: 15,
                     className: 'text-cg-text-muted',
                   } as any),
