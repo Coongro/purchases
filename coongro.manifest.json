@@ -15,16 +15,14 @@
         "path": "Salidas",
         "order": 7,
         "icon": "assets/icons/cart.svg",
-        "color": "#8b5cf6"
-      },
-      {
-        "path": "Salidas/Movimientos",
-        "order": 1,
+        "color": "#8b5cf6",
         "viewId": "purchases.salidas.open"
       },
       {
-        "path": "Salidas/Proveedores",
-        "order": 2,
+        "path": "Proveedores",
+        "order": 8,
+        "icon": "assets/icons/store.svg",
+        "color": "#8b5cf6",
         "viewId": "purchases.proveedores.open"
       }
     ],
