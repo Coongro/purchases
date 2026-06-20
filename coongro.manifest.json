@@ -21,7 +21,7 @@
       {
         "path": "Proveedores",
         "order": 8,
-        "icon": "assets/icons/store.svg",
+        "icon": "Building2",
         "color": "#8b5cf6",
         "viewId": "purchases.proveedores.open"
       }
