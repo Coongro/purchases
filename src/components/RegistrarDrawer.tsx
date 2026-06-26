@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { DatePicker } from '@coongro/calendar';
 import { getHostReact } from '@coongro/plugin-sdk';
 
 import { fmt, MEDIOS, MEDIO_BY_ID, GASTOS, PROD_CATS, PROD_CAT_BY_ID } from '../data/salidasUi.js';
@@ -408,11 +409,10 @@ function ItemRow(props: {
         'label',
         { className: 'sa-mini' },
         h('span', null, 'Vencimiento'),
-        h('input', {
-          className: 'input sa-num',
-          placeholder: 'MM/AAAA',
+        h(DatePicker, {
           value: item.venc || '',
-          onChange: (e: any) => onChange({ ...item, venc: e.target.value }),
+          onChange: (d: string) => onChange({ ...item, venc: d }),
+          placeholder: 'Vencimiento',
         })
       )
     ),

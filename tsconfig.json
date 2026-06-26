@@ -42,6 +42,12 @@
       ],
       "@coongro/billing/*": [
         "../billing/dist/*"
+      ],
+      "@coongro/calendar": [
+        "../calendar/dist/index.d.ts"
+      ],
+      "@coongro/calendar/*": [
+        "../calendar/dist/*"
       ]
     }
   },

@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "@coongro/products": ">=0.1.0",
-    "@coongro/billing": ">=0.1.0"
+    "@coongro/billing": ">=0.1.0",
+    "@coongro/calendar": ">=0.1.0"
   },
   "peerDependencies": {
     "@coongro/plugin-sdk": ">=0.1.0"
