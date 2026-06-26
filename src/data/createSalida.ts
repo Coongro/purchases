@@ -11,14 +11,31 @@ export interface SalidaItemInput {
   expiration?: string | null;
 }
 
-/** Normaliza el vencimiento a fecha ISO para products.batches: "MM/AAAA" → "AAAA-MM-01". */
+/**
+ * Normaliza el vencimiento a fecha ISO para products.batches. El drawer ahora manda el campo de
+ * fecha de Coongro (`type="date"` → "AAAA-MM-DD"); se conserva el parseo de "MM/AAAA" para datos
+ * legacy.
+ */
 function vencToISO(v: string | null | undefined): string | null {
   const s = (v ?? '').trim();
   if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
   const mm = /^(\d{1,2})\/(\d{4})$/.exec(s);
   if (mm) return `${mm[2]}-${mm[1].padStart(2, '0')}-01`;
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
   return null;
+}
+
+/**
+ * Formatea el vencimiento para el detalle del lote a "DD/MM/AAAA". Cubre el ISO del campo de
+ * fecha ("AAAA-MM-DD") y el "MM/AAAA" legacy (día 01); cualquier otro formato se deja igual.
+ */
+function fmtVenc(v: string | null | undefined): string {
+  const s = (v ?? '').trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const mmYyyy = /^(\d{1,2})\/(\d{4})$/.exec(s);
+  if (mmYyyy) return `01/${mmYyyy[1].padStart(2, '0')}/${mmYyyy[2]}`;
+  return s;
 }
 
 /**
@@ -142,9 +159,9 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
   if (isCompra) {
     for (const it of items) {
       // Lote como texto de display, guardado en source_ref para mostrarlo en el detalle
-      // ("L-4471 · vence 12/2026"). El venc llega ya como "MM/AAAA" del drawer.
+      // ("L-4471 · vence 15/12/2026"). El venc llega como ISO ("AAAA-MM-DD") del campo de fecha.
       const venc = it.expiration?.trim() || '';
-      const vencSuffix = venc ? ` · vence ${venc}` : '';
+      const vencSuffix = venc ? ` · vence ${fmtVenc(venc)}` : '';
       const loteRef = it.lote?.trim() ? `${it.lote.trim()}${vencSuffix}` : null;
       await actions.execute('billing.lines.add', {
         accountId,
