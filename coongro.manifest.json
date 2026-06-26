@@ -45,16 +45,6 @@
         "module": "./dist/repositories/supplier.repository.js",
         "export": "SupplierRepository",
         "prefix": "purchases.suppliers"
-      },
-      {
-        "module": "./dist/repositories/purchase.repository.js",
-        "export": "PurchaseRepository",
-        "prefix": "purchases.records"
-      },
-      {
-        "module": "./dist/repositories/purchase-line.repository.js",
-        "export": "PurchaseLineRepository",
-        "prefix": "purchases.lines"
       }
     ]
   }
