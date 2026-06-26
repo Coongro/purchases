@@ -14,7 +14,7 @@ import { formatMoney, formatDate } from '../../utils/money.js';
 
 const UI = getHostUI();
 const React = getHostReact();
-const { useState, useMemo } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 const h = React.createElement;
 
 const SERIF = 'font-serif font-black tracking-tight';
@@ -33,7 +33,7 @@ function estadoBadge(s: SalidaRow) {
  * → estado), así el estado pagada/parcial/a-pagar es real. Drawer con modos Gasto/Compra +
  * control de estado. El lote por ítem va aparte (COONG-217). Solo el efectivo+pagada toca caja.
  */
-export function SalidasView() {
+export function SalidasView(props: { accountId?: string } = {}) {
   const { rows, deuda, loading, error, reload } = useSalidas();
   const { rows: suppliers } = useSuppliers();
   const productOptions = useProductOptions();
@@ -46,6 +46,17 @@ export function SalidasView() {
   const [deudaOpen, setDeudaOpen] = useState(true);
   // Salida abierta en el drawer de detalle (click en una fila).
   const [detailRow, setDetailRow] = useState<SalidaRow | null>(null);
+
+  // Deep-link: abrir directo la salida indicada (ej. desde el origen de un lote).
+  const lastOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!props.accountId || rows.length === 0 || lastOpened.current === props.accountId) return;
+    const row = rows.find((r) => r.id === props.accountId);
+    if (row) {
+      setDetailRow(row);
+      lastOpened.current = props.accountId;
+    }
+  }, [props.accountId, rows]);
 
   const metrics = useMemo(() => {
     let aPagar = 0;

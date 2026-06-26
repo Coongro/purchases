@@ -21,8 +21,12 @@ function vencToISO(v: string | null | undefined): string | null {
   return null;
 }
 
-/** Alimenta el stock genérico (products) por un ítem de compra. Blando: si products no está. */
-async function feedStock(accountId: string, it: SalidaItemInput): Promise<void> {
+/**
+ * Stock de un ítem de compra SIN lote (insumo suelto, no loteable): movimiento `in`
+ * directo en products.stock. Solo se usa cuando el ítem NO trae lote — los loteables
+ * van por `feedBatch`. Así cada ítem alimenta el stock por una sola vía. Blando.
+ */
+async function feedStockNoBatch(accountId: string, it: SalidaItemInput): Promise<void> {
   if (!it.productId) return;
   try {
     await actions.execute('products.stock.create', {
@@ -41,11 +45,18 @@ async function feedStock(accountId: string, it: SalidaItemInput): Promise<void> 
 }
 
 /**
- * Si el ítem trae lote, lo registra en el stock genérico de lotes (products.batches, COONG-217)
- * — el mismo que leen Farmacia y la dispensación de recetas. Así comprar por Salidas hace
- * aparecer el lote/vencimiento como stock disponible. Blando: si products no está.
+ * Registra la mercadería comprada como LOTE en products.batches (COONG-217/220) — el motor
+ * de lotes unificado que leen Farmacia, Vacunación y la dispensación de recetas. El alta del
+ * lote es la ÚNICA fuente de stock (products.batches.create ya suma a product.stock_current
+ * vía su movimiento `in`), por eso ya no se alimenta products.stock por separado: eso duplicaba
+ * el stock. Guarda el proveedor de la compra en el lote para trazar su origen. Blando: si
+ * products no está, la salida igual queda registrada.
  */
-async function feedBatch(it: SalidaItemInput): Promise<void> {
+async function feedBatch(
+  it: SalidaItemInput,
+  supplierId: string | null,
+  accountId: string
+): Promise<void> {
   if (!it.productId || !it.lote?.trim()) return;
   try {
     await actions.execute('products.batches.create', {
@@ -55,6 +66,11 @@ async function feedBatch(it: SalidaItemInput): Promise<void> {
         expiration_date: vencToISO(it.expiration),
         quantity: String(it.quantity),
         purchase_price: String(it.unitCost),
+        supplier_id: supplierId,
+        // Origen del lote = la salida (cuenta payable) que lo dio de alta. Permite saltar
+        // desde la trazabilidad del lote a la compra de donde vino. Genérico: products no
+        // sabe qué es una "salida", solo guarda el id + un tipo opaco.
+        metadata: { sourceAccountId: accountId, sourceType: 'salida' },
         status: 'active',
       },
     });
@@ -140,10 +156,15 @@ export async function createSalida(input: CreateSalidaInput): Promise<string> {
         sourceType: 'compra',
         sourceRef: loteRef,
       });
-      // Alimentar stock genérico (solo si la línea está atada a un producto).
-      await feedStock(accountId, it);
-      // Si trae lote, registrarlo en products.batches (stock con lote/vencimiento).
-      await feedBatch(it);
+      // Stock por UNA sola vía (sin doble contabilidad): si el ítem trae lote
+      // (medicamento/vacuna) entra como lote en products.batches —que ya suma a
+      // stock_current—; si no trae lote (insumo suelto) se registra un movimiento
+      // 'in' directo. Antes corrían las dos y el stock se contaba dos veces.
+      if (it.lote?.trim()) {
+        await feedBatch(it, input.supplierId ?? null, accountId);
+      } else if (it.productId) {
+        await feedStockNoBatch(accountId, it);
+      }
     }
   } else {
     await actions.execute('billing.lines.add', {

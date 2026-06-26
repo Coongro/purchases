@@ -8,6 +8,13 @@
       "when": 1780773764076,
       "tag": "0000_smart_changeling",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782172064905,
+      "tag": "0001_drop_legacy_purchase_tables",
+      "breakpoints": true
     }
   ]
 }
