@@ -1,0 +1,125 @@
+{
+  "specVersion": 1,
+  "kind": "crud",
+  "title": "Proveedores",
+  "data": {
+    "repositoryPrefix": "purchases.suppliers"
+  },
+  "blocks": [
+    {
+      "id": "hdr",
+      "kind": "component",
+      "comp": "PageHeader",
+      "props": {
+        "kicker": "",
+        "kickerTone": "brand",
+        "title": "Proveedores",
+        "subtitle": "A quién le comprás. Se reutilizan en cada compra.",
+        "actionLabel": "Nuevo proveedor",
+        "action": {
+          "id": "openForm",
+          "label": "Nuevo proveedor",
+          "target": "purchases.nuevo-proveedor.open"
+        }
+      }
+    },
+    {
+      "id": "tabla",
+      "kind": "component",
+      "comp": "DataTable",
+      "props": {
+        "source": "purchases.suppliers",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Proveedor"
+          },
+          {
+            "key": "contact",
+            "label": "Contacto",
+            "emptyLabel": "—"
+          },
+          {
+            "key": "notes",
+            "label": "Nota",
+            "emptyLabel": "—"
+          },
+          {
+            "key": "is_active",
+            "label": "Estado",
+            "display": "pill",
+            "values": [
+              {
+                "value": "true",
+                "label": "Activo",
+                "tone": "success"
+              },
+              {
+                "value": "false",
+                "label": "Inactivo",
+                "tone": "neutral"
+              }
+            ]
+          },
+          {
+            "key": "created_at",
+            "label": "Alta",
+            "format": "date"
+          }
+        ],
+        "filters": [
+          {
+            "column": "is_active",
+            "label": "Estado",
+            "kind": "select",
+            "options": [
+              "Activo",
+              "Inactivo"
+            ],
+            "default": "true"
+          }
+        ],
+        "actions": [
+          {
+            "label": "Eliminar",
+            "variant": "destructive"
+          }
+        ],
+        "cells": [
+          [
+            "Distribuidora del Sur",
+            "011 4555-1200",
+            "Entrega los martes",
+            {
+              "badge": "Activo",
+              "tone": "success"
+            },
+            "12/03/2026"
+          ],
+          [
+            "Vetmarket S.A.",
+            "ventas@vetmarket.com.ar",
+            "—",
+            {
+              "badge": "Activo",
+              "tone": "success"
+            },
+            "28/04/2026"
+          ],
+          [
+            "Insumos Pampa",
+            "011 4788-9034",
+            "Pago a 30 días",
+            {
+              "badge": "Inactivo",
+              "tone": "neutral"
+            },
+            "05/01/2026"
+          ]
+        ],
+        "mobile": "cards",
+        "pageSize": "20"
+      }
+    }
+  ]
+}

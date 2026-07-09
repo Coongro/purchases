@@ -34,6 +34,12 @@
         "export": "SalidasView"
       },
       {
+        "id": "purchases.nuevo-proveedor.open",
+        "title": "Proveedor",
+        "component": "./dist/views/nuevo-proveedor/index.js",
+        "export": "NuevoProveedorView"
+      },
+      {
         "id": "purchases.proveedores.open",
         "title": "Proveedores",
         "component": "./dist/views/proveedores/index.js",
