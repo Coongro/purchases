@@ -1,0 +1,65 @@
+{
+  "specVersion": 1,
+  "kind": "form",
+  "title": "Proveedor",
+  "data": {
+    "repositoryPrefix": "purchases.suppliers"
+  },
+  "blocks": [
+    {
+      "id": "card",
+      "kind": "container",
+      "ctype": "card",
+      "label": "Datos del proveedor",
+      "icon": "Truck",
+      "layout": {
+        "dir": "col",
+        "gap": "md",
+        "pad": "lg"
+      },
+      "children": [
+        {
+          "id": "f_name",
+          "kind": "field",
+          "name": "name",
+          "fieldType": "text",
+          "label": "Nombre",
+          "validations": [
+            "required"
+          ],
+          "width": "full",
+          "placeholder": "Ej: Distribuidora del Sur"
+        },
+        {
+          "id": "f_contact",
+          "kind": "field",
+          "name": "contact",
+          "fieldType": "text",
+          "label": "Contacto",
+          "validations": [],
+          "width": "half",
+          "placeholder": "Teléfono o email"
+        },
+        {
+          "id": "f_notes",
+          "kind": "field",
+          "name": "notes",
+          "fieldType": "text",
+          "label": "Nota",
+          "validations": [],
+          "width": "full",
+          "placeholder": "Ej: entrega los martes, pago a 30 días"
+        },
+        {
+          "id": "f_is_active",
+          "kind": "field",
+          "name": "is_active",
+          "fieldType": "boolean",
+          "label": "Activo",
+          "validations": [],
+          "width": "half"
+        }
+      ]
+    }
+  ]
+}
