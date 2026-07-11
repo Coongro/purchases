@@ -1,6 +1,6 @@
 {
   "name": "@coongro/purchases",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Compras a proveedores: registrar la compra, el proveedor y el pago (efectivo → egreso de caja). Alimenta el stock de products. Sin cuenta corriente (Nivel 1).",
   "main": "dist/index.js",
