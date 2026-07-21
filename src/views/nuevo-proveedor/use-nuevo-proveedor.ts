@@ -12,7 +12,10 @@ const React = getHostReact();
 const { useState, useEffect, useCallback } = React;
 
 export function useNuevoProveedorView() {
-  const { toast } = usePlugin();
+  const {
+    toast,
+    views: { closeDialog },
+  } = usePlugin();
   const [values, setValues] = useState<Record<string, any>>({
     name: null,
     contact: null,
@@ -25,10 +28,12 @@ export function useNuevoProveedorView() {
     setErrors((e: any) => ({ ...e, [k]: undefined }));
   }, []);
 
-  // Si la vista se abrió con views.open(id, { record }) → modo edición
+  // record con el que se abrió la vista (views.open(id, { record })), si hubo — lo
+  // reciben los handlers en onSubmit (ej. una acción de fila que necesita el id).
   const initialRecord = ((views.params as any)?.record ?? null) as Record<string, any> | null;
+  // Abierta con { record } → modo edición: prefillea y pasa a update
   const [editingId, setEditingId] = useState<string | null>(
-    initialRecord?.id != null ? String(initialRecord.id) : null
+    initialRecord?.id !== null && initialRecord?.id !== undefined ? String(initialRecord.id) : null
   );
   useEffect(() => {
     if (!initialRecord) return;
@@ -42,12 +47,17 @@ export function useNuevoProveedorView() {
       }
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // deps intencionalmente fijas: el efecto corre una sola vez
   }, []);
 
   const validate = useCallback((): Record<string, string> => {
     const errs: Record<string, string> = {};
-    if (values['name'] == null || values['name'] === '' || values['name'] === false)
+    if (
+      values['name'] === null ||
+      values['name'] === undefined ||
+      values['name'] === '' ||
+      values['name'] === false
+    )
       errs['name'] = '«Nombre» es requerido';
     return errs;
   }, [values]);
@@ -61,7 +71,14 @@ export function useNuevoProveedorView() {
     }
     try {
       if (customHandlers.onSubmit) {
-        const ctx = { execute: actions.execute, toast, editingId };
+        const ctx = {
+          execute: function exec<T = unknown>(id: string, args?: unknown): Promise<T> {
+            return actions.execute<T>(id, args);
+          },
+          toast,
+          editingId,
+          record: initialRecord,
+        };
         await customHandlers.onSubmit(values, ctx);
       } else if (editingId) {
         await actions.execute('purchases.suppliers.update', { id: editingId, ...values });
@@ -71,10 +88,11 @@ export function useNuevoProveedorView() {
       toast.success(editingId ? 'Actualizado' : 'Guardado', 'El registro se guardó correctamente');
       setEditingId(null);
       setValues({ name: null, contact: null, notes: null, is_active: false });
+      closeDialog();
     } catch (err) {
       toast.error('Error', err instanceof Error ? err.message : 'No se pudo guardar');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // deps intencionalmente fijas: el efecto corre una sola vez
   }, [values, validate, editingId]);
 
   return { values, errors, setField, editingId, submit };

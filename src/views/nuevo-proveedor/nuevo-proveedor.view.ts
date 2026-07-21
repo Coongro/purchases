@@ -4,7 +4,7 @@
  * ⚠️ ARCHIVO REGENERABLE: se reescribe al guardar el diseño en el Builder.
  * La lógica custom va en `handlers.ts` (nunca se pisa). Diseño: `spec.json`.
  */
-import { getHostReact, getHostUI, useIsMobile, usePlugin } from '@coongro/plugin-sdk';
+import { getHostReact, getHostUI, usePlugin } from '@coongro/plugin-sdk';
 
 import { useNuevoProveedorView } from './use-nuevo-proveedor.js';
 
@@ -15,7 +15,6 @@ const h = React.createElement;
 const UI = getHostUI() as any;
 
 export function NuevoProveedorView() {
-  const isMobile = useIsMobile();
   const {
     views: { closeDialog },
   } = usePlugin();

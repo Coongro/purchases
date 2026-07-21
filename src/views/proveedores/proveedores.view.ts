@@ -40,13 +40,18 @@ export function ProveedoresView() {
 
   const cellText = (row: any, c: any) => {
     const v = cellValue(row, c);
-    return v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return v === null || v === undefined
+      ? ''
+      : typeof v === 'object'
+        ? JSON.stringify(v)
+        : String(v);
   };
   const TONE_VARIANT: Record<string, string> = {
     neutral: 'secondary',
     success: 'success-soft',
     warning: 'warning-soft',
     danger: 'danger-soft',
+    outline: 'outline',
   };
   const enumVal = (c: any, raw: string) => (c.values ?? []).find((e: any) => e.value === raw);
   const formatDate = (fmt: string, raw: string) => {
@@ -109,7 +114,11 @@ export function ProveedoresView() {
     const icon = iconName ? h(UI.DynamicIcon, { icon: iconName, size: 16 }) : null;
     if (c.display === 'pill') {
       return label
-        ? h(UI.Badge, { variant: TONE_VARIANT[ev?.tone ?? 'neutral'] ?? 'secondary' }, label)
+        ? h(
+            UI.Badge,
+            { variant: TONE_VARIANT[ev?.tone ?? c.tone ?? 'neutral'] ?? 'secondary', icon },
+            label
+          )
         : '';
     }
     if (c.display === 'progress') {
