@@ -33,13 +33,15 @@ function estadoBadge(s: SalidaRow) {
  * → estado), así el estado pagada/parcial/a-pagar es real. Drawer con modos Gasto/Compra +
  * control de estado. El lote por ítem va aparte (COONG-217). Solo el efectivo+pagada toca caja.
  */
-export function SalidasView(props: { accountId?: string } = {}) {
+export function SalidasView(props: { accountId?: string; openNew?: 'compra' | 'gasto' } = {}) {
   const { rows, deuda, loading, error, reload } = useSalidas();
   const { rows: suppliers } = useSuppliers();
   const productOptions = useProductOptions();
   const { toast } = usePlugin();
 
   const [registrando, setRegistrando] = useState(false);
+  // Modo inicial del drawer cuando se abre por deep-link (ej. desde Lotes → Compra).
+  const [nuevoModo, setNuevoModo] = useState<'compra' | 'gasto'>('gasto');
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>('todas');
@@ -57,6 +59,15 @@ export function SalidasView(props: { accountId?: string } = {}) {
       lastOpened.current = props.accountId;
     }
   }, [props.accountId, rows]);
+
+  // Deep-link: abrir el drawer de alta en el modo pedido (ej. Lotes → "Registrar compra").
+  const openedNew = useRef(false);
+  useEffect(() => {
+    if (!props.openNew || openedNew.current) return;
+    setNuevoModo(props.openNew);
+    setRegistrando(true);
+    openedNew.current = true;
+  }, [props.openNew]);
 
   const metrics = useMemo(() => {
     let aPagar = 0;
@@ -246,7 +257,14 @@ export function SalidasView(props: { accountId?: string } = {}) {
         ),
         h(
           UI.Button,
-          { variant: 'brand', size: 'sm', onClick: () => setRegistrando(true) } as any,
+          {
+            variant: 'brand',
+            size: 'sm',
+            onClick: () => {
+              setNuevoModo('gasto');
+              setRegistrando(true);
+            },
+          } as any,
           h(UI.DynamicIcon, { icon: 'Plus', size: 14 } as any),
           ' Registrar salida'
         )
@@ -383,6 +401,7 @@ export function SalidasView(props: { accountId?: string } = {}) {
         suppliers,
         products: productOptions,
         busy,
+        initialMode: nuevoModo,
       }),
 
     // Drawer de detalle — click en una fila abre el detalle + permite registrar pago.

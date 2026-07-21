@@ -66,9 +66,10 @@ function CategoryAdder(props: {
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
-  // Solo categorías con al menos un producto (decisión de producto: no mostrar tabs vacías).
-  const cats = PROD_CATS.filter((c) => products.some((p) => p.bucket === c.id));
-  if (cats.length === 0) return null;
+  // Siempre mostramos las 3 categorías fijas (Med. / Vacunas / Insumos). Aunque el catálogo
+  // no tenga productos de una, el usuario igual puede cargar el ítem a mano — antes se ocultaba
+  // la pestaña vacía y quedaba sin forma de sumar, p. ej., un medicamento (COONG-254).
+  const cats = PROD_CATS;
   const cat = open ? PROD_CAT_BY_ID[open] : null;
   const norm = (s: string) => (s || '').toLowerCase();
   const results = open
@@ -160,7 +161,7 @@ function CategoryAdder(props: {
                 },
               },
               h(Icon, { name: 'plus', size: 12 }),
-              ` Cargar ${cat.noun} libre`
+              ` Cargar ${cat.noun} a mano`
             )
           )
       )
@@ -480,7 +481,7 @@ function EstadoControl(props: { pagada: boolean; onChange: (v: boolean) => void;
   );
 }
 
-function Field(props: { label: string; opt?: boolean; children: any }) {
+function Field(props: { label: string; opt?: boolean; req?: boolean; children: any }) {
   return h(
     'div',
     { className: 'sa-fld' },
@@ -488,6 +489,7 @@ function Field(props: { label: string; opt?: boolean; children: any }) {
       'span',
       { className: 'sa-fld-label' },
       props.label,
+      props.req && h('span', { style: { color: 'var(--cg-danger)', fontWeight: 700 } }, ' *'),
       props.opt && h('span', { className: 'sa-opt-tag' }, ' · opcional')
     ),
     props.children
@@ -506,9 +508,11 @@ export function RegistrarDrawer(props: {
   suppliers: { id: string; name: string }[];
   products: ProductPick[];
   busy: boolean;
+  /** Modo inicial del drawer (ej. abrir directo en 'compra' desde un deep-link). Default: 'gasto'. */
+  initialMode?: Mode;
 }) {
-  const { onClose, onSubmit, suppliers, products, busy } = props;
-  const [modo, setModo] = useState<Mode>('gasto');
+  const { onClose, onSubmit, suppliers, products, busy, initialMode = 'gasto' } = props;
+  const [modo, setModo] = useState<Mode>(initialMode);
   const [medio, setMedio] = useState('efectivo');
   const [pagada, setPagada] = useState(true);
   const [nota, setNota] = useState('');
@@ -657,7 +661,7 @@ export function RegistrarDrawer(props: {
               null,
               h(
                 Field,
-                { label: 'Proveedor' },
+                { label: 'Proveedor', req: true },
                 h(SearchMenu, {
                   value: prov.name,
                   icon: 'store',
@@ -680,7 +684,7 @@ export function RegistrarDrawer(props: {
                   'span',
                   { className: 'sa-fld-label' },
                   'Ítems de la compra ',
-                  h('span', { className: 'sa-opt-tag' }, '· del catálogo o libre')
+                  h('span', { className: 'sa-opt-tag' }, '· del catálogo o a mano')
                 ),
                 h(CategoryAdder, { products, onAdd: addItem }),
                 items.length > 0
@@ -718,7 +722,7 @@ export function RegistrarDrawer(props: {
                   : h(
                       'div',
                       { className: 'sa-items-empty' },
-                      'Buscá productos del catálogo (o cargá libre). Caen todos a esta lista.'
+                      'Todavía no agregaste ítems. Sumá productos del catálogo con los botones de arriba; si alguno no está, podés cargarlo a mano.'
                     )
               )
             ),
