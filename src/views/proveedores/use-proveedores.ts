@@ -30,7 +30,11 @@ export function useProveedoresView() {
     setLoading(true);
     try {
       const data = customHandlers.loadData
-        ? await customHandlers.loadData({ execute: actions.execute })
+        ? await customHandlers.loadData({
+            execute: function exec<T = unknown>(id: string, args?: unknown): Promise<T> {
+              return actions.execute<T>(id, args);
+            },
+          })
         : await actions.execute<any[]>('purchases.suppliers.list');
       if (mounted.current) setRows(Array.isArray(data) ? data : []);
     } catch {
@@ -41,7 +45,7 @@ export function useProveedoresView() {
     } finally {
       if (mounted.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // deps intencionalmente fijas: el efecto corre una sola vez
   }, []);
   useEffect(() => {
     void load();
@@ -63,6 +67,7 @@ export function useProveedoresView() {
     ref2?: string;
     display?: string;
     values?: { value: string; label?: string; icon?: string; tone?: string }[];
+    tone?: string;
     prefix?: string;
     suffix?: string;
     format?: string;
@@ -100,7 +105,11 @@ export function useProveedoresView() {
     ((row: any) =>
       COLUMNS.map((c) => {
         const v = cellValue(row, c);
-        return v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return v === null || v === undefined
+          ? ''
+          : typeof v === 'object'
+            ? JSON.stringify(v)
+            : String(v);
       }));
 
   // orden por columna (click en el encabezado) + filtros automáticos
@@ -119,7 +128,7 @@ export function useProveedoresView() {
           rows
             .map((r) => {
               const v = cellValue(r, c);
-              return v == null ? '' : String(v);
+              return v === null || v === undefined ? '' : String(v);
             })
             .filter(Boolean)
         ),
@@ -127,7 +136,7 @@ export function useProveedoresView() {
       if (vals.length >= 2 && vals.length <= 12) out[c.key] = vals.sort();
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // deps intencionalmente fijas: el efecto corre una sola vez
   }, [rows]);
   const visibleRows = useMemo(() => {
     let out = rows;
@@ -158,7 +167,7 @@ export function useProveedoresView() {
         });
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // deps intencionalmente fijas: el efecto corre una sola vez
   }, [rows, search, filters, sort]);
   // limpiar todo: búsqueda + filtros + orden (botón "Limpiar filtros" del FilterBar)
   const clearFilters = useCallback(() => {
@@ -196,7 +205,7 @@ export function useProveedoresView() {
     } finally {
       setDeleting(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // deps intencionalmente fijas: el efecto corre una sola vez
   }, [pendingDelete, load]);
 
   return {

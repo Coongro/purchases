@@ -16,10 +16,13 @@ export interface ProductOption {
 }
 
 /**
- * Bucket por nombre de categoría: "vacunas" → vacc; sin categoría o medicamento/fármaco →
- * med; el resto → insumo. Pragmático para el seed actual (vacunas + 2 meds sin categoría);
- * si products gana una taxonomía propia, esto se reemplaza por el campo real.
+ * Fallback por nombre de categoría cuando el producto no está clasificado por los plugins
+ * autoritativos (vaccination / vet-pharmacy no instalados, o un insumo genérico): "vacunas" →
+ * vacc; sin categoría o medicamento/fármaco → med; el resto → insumo.
  */
+/** Categoría (genérica de products) que es la FUENTE DE VERDAD de un insumo — igual que vet-inventory. */
+const INSUMOS_CATEGORY = 'insumos';
+
 function bucketOf(name: string | null): ProductBucket {
   const n = (name ?? '').toLowerCase();
   if (n.includes('vacun')) return 'vacc';
@@ -75,14 +78,25 @@ export function useProductOptions(): ProductOption[] {
     let active = true;
     void (async () => {
       try {
-        const [list, cats] = await Promise.all([
+        // Clasificación autoritativa: qué product_ids son vacuna / medicamento la definen los
+        // plugins del kit (igual que la vista de Lotes), no una heurística por nombre. Ambos son
+        // acoplamiento BLANDO: si el plugin no está, el set queda vacío y se cae al fallback.
+        const [list, cats, vaccs, meds] = await Promise.all([
           actions.execute<RawProduct[]>('products.items.list'),
           actions
             .execute<RawCategory[]>('products.categories.list')
             .catch(() => [] as RawCategory[]),
+          actions
+            .execute<Array<{ product_id: string }>>('vaccination.catalog.list')
+            .catch(() => [] as Array<{ product_id: string }>),
+          actions
+            .execute<Array<{ product_id: string }>>('vet-pharmacy.medications.list')
+            .catch(() => [] as Array<{ product_id: string }>),
         ]);
         const serviceIds = serviceCategoryIds(cats ?? []);
         const catName = new Map((cats ?? []).map((c) => [c.id, c.name]));
+        const vaccIds = new Set((vaccs ?? []).map((v) => v.product_id));
+        const medIds = new Set((meds ?? []).map((m) => m.product_id));
         const seen = new Set<string>();
         const filtered = (list ?? []).filter((p) => {
           if (p.category_id && serviceIds.has(p.category_id)) return false; // servicio
@@ -97,7 +111,18 @@ export function useProductOptions(): ProductOption[] {
               id: p.id,
               name: p.name,
               purchasePrice: p.purchase_price,
-              bucket: bucketOf(p.category_id ? (catName.get(p.category_id) ?? null) : null),
+              // Fuente de verdad por tipo: vacuna/med por los plugins del kit; insumo por la
+              // categoría "Insumos" (igual que la vista de vet-inventory). El heurístico por
+              // nombre queda solo de fallback para catálogos legacy sin clasificar.
+              bucket: vaccIds.has(p.id)
+                ? ('vacc' as ProductBucket)
+                : medIds.has(p.id)
+                  ? ('med' as ProductBucket)
+                  : (p.category_id ? (catName.get(p.category_id) ?? '') : '')
+                        .trim()
+                        .toLowerCase() === INSUMOS_CATEGORY
+                    ? ('insumo' as ProductBucket)
+                    : bucketOf(p.category_id ? (catName.get(p.category_id) ?? null) : null),
             }))
           );
         }
