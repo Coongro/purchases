@@ -4,21 +4,33 @@
  * ⚠️ ARCHIVO REGENERABLE: se reescribe al guardar el diseño en el Builder.
  * La lógica custom va en `handlers.ts` (nunca se pisa). Diseño: `spec.json`.
  */
-import { getHostReact, getHostUI, usePlugin } from '@coongro/plugin-sdk';
+import { useAccess, usePlugin } from '@coongro/plugin-sdk';
+import * as UI from '@coongro/ui-components';
+import { createElement as h } from 'react';
 
 import { useNuevoProveedorView } from './use-nuevo-proveedor.js';
 
-const React = getHostReact();
-const h = React.createElement;
-// Componentes del HOST: el diseño vive en core — una actualización de
-// ui-components se refleja acá sin regenerar esta vista.
-const UI = getHostUI() as any;
-
 export function NuevoProveedorView() {
+  const access = useAccess();
   const {
     views: { closeDialog },
   } = usePlugin();
-  const { values, errors, setField, submit, editingId } = useNuevoProveedorView();
+  const {
+    values,
+    errors,
+    setField,
+    fieldDomId,
+    touched,
+    tried,
+    blurField,
+    submit,
+    recordLoading,
+    editingId,
+    confirmRemove,
+    setConfirmRemove,
+    removing,
+    removeEditing,
+  } = useNuevoProveedorView();
 
   return h(
     'div',
@@ -39,7 +51,7 @@ export function NuevoProveedorView() {
             {
               style: {
                 display: 'flex',
-                flexDirection: 'column',
+                flexDirection: 'column' as const,
                 gap: '16px',
                 padding: '24px',
                 alignItems: 'stretch',
@@ -51,26 +63,28 @@ export function NuevoProveedorView() {
               h(
                 'div',
                 { style: { flex: '1 1 100%', minWidth: 0 } },
-                h(
-                  UI.Label,
-                  { htmlFor: 'name', style: { display: 'block', marginBottom: '6px' } },
-                  'Nombre',
-                  h('span', { style: { color: 'var(--cg-danger)' } }, ' *')
-                ),
-                h(UI.Input, {
-                  id: 'name',
-                  type: 'text',
-                  value: String(values['name'] ?? ''),
-                  placeholder: 'Ej: Distribuidora del Sur',
-                  onChange: (e: any) => setField('name', e.target.value),
-                }),
-                errors['name']
-                  ? h(
-                      'div',
-                      { style: { fontSize: '12px', color: 'var(--cg-danger)', marginTop: '4px' } },
-                      errors['name']
-                    )
-                  : null
+                h(UI.FormField, {
+                  id: fieldDomId('name'),
+                  label: 'Nombre',
+                  error: errors['name'],
+                  ok:
+                    (touched['name'] || tried > 0) &&
+                    !errors['name'] &&
+                    String(values['name'] ?? '') !== '',
+                  reserve: true,
+                  index: 0,
+                  shake: tried,
+                  children: h(UI.Input, {
+                    id: fieldDomId('name'),
+                    'aria-invalid': errors['name'] ? true : undefined,
+                    'aria-describedby': fieldDomId('name') + '-msg',
+                    onBlur: () => blurField('name'),
+                    type: 'text',
+                    value: String(values['name'] ?? ''),
+                    placeholder: 'Ej: Distribuidora del Sur',
+                    onChange: (e: any) => setField('name', e.target.value),
+                  }),
+                })
               )
             ),
             h(
@@ -79,25 +93,28 @@ export function NuevoProveedorView() {
               h(
                 'div',
                 { style: { flex: '1 1 100%', minWidth: 0 } },
-                h(
-                  UI.Label,
-                  { htmlFor: 'contact', style: { display: 'block', marginBottom: '6px' } },
-                  'Contacto'
-                ),
-                h(UI.Input, {
-                  id: 'contact',
-                  type: 'text',
-                  value: String(values['contact'] ?? ''),
-                  placeholder: 'Teléfono o email',
-                  onChange: (e: any) => setField('contact', e.target.value),
-                }),
-                errors['contact']
-                  ? h(
-                      'div',
-                      { style: { fontSize: '12px', color: 'var(--cg-danger)', marginTop: '4px' } },
-                      errors['contact']
-                    )
-                  : null
+                h(UI.FormField, {
+                  id: fieldDomId('contact'),
+                  label: 'Contacto',
+                  optional: true,
+                  error: errors['contact'],
+                  ok:
+                    (touched['contact'] || tried > 0) &&
+                    !errors['contact'] &&
+                    String(values['contact'] ?? '') !== '',
+                  index: 1,
+                  shake: tried,
+                  children: h(UI.Input, {
+                    id: fieldDomId('contact'),
+                    'aria-invalid': errors['contact'] ? true : undefined,
+                    'aria-describedby': fieldDomId('contact') + '-msg',
+                    onBlur: () => blurField('contact'),
+                    type: 'text',
+                    value: String(values['contact'] ?? ''),
+                    placeholder: 'Teléfono o email',
+                    onChange: (e: any) => setField('contact', e.target.value),
+                  }),
+                })
               )
             ),
             h(
@@ -106,25 +123,28 @@ export function NuevoProveedorView() {
               h(
                 'div',
                 { style: { flex: '1 1 100%', minWidth: 0 } },
-                h(
-                  UI.Label,
-                  { htmlFor: 'notes', style: { display: 'block', marginBottom: '6px' } },
-                  'Nota'
-                ),
-                h(UI.Input, {
-                  id: 'notes',
-                  type: 'text',
-                  value: String(values['notes'] ?? ''),
-                  placeholder: 'Ej: entrega los martes, pago a 30 días',
-                  onChange: (e: any) => setField('notes', e.target.value),
-                }),
-                errors['notes']
-                  ? h(
-                      'div',
-                      { style: { fontSize: '12px', color: 'var(--cg-danger)', marginTop: '4px' } },
-                      errors['notes']
-                    )
-                  : null
+                h(UI.FormField, {
+                  id: fieldDomId('notes'),
+                  label: 'Nota',
+                  optional: true,
+                  error: errors['notes'],
+                  ok:
+                    (touched['notes'] || tried > 0) &&
+                    !errors['notes'] &&
+                    String(values['notes'] ?? '') !== '',
+                  index: 2,
+                  shake: tried,
+                  children: h(UI.Input, {
+                    id: fieldDomId('notes'),
+                    'aria-invalid': errors['notes'] ? true : undefined,
+                    'aria-describedby': fieldDomId('notes') + '-msg',
+                    onBlur: () => blurField('notes'),
+                    type: 'text',
+                    value: String(values['notes'] ?? ''),
+                    placeholder: 'Ej: entrega los martes, pago a 30 días',
+                    onChange: (e: any) => setField('notes', e.target.value),
+                  }),
+                })
               )
             ),
             h(
@@ -145,11 +165,14 @@ export function NuevoProveedorView() {
                   },
                   h(
                     UI.Label,
-                    { htmlFor: 'is_active', style: { display: 'block', marginBottom: '6px' } },
+                    {
+                      htmlFor: fieldDomId('is_active'),
+                      style: { display: 'block', marginBottom: '6px' },
+                    },
                     'Activo'
                   ),
                   h(UI.Switch, {
-                    id: 'is_active',
+                    id: fieldDomId('is_active'),
                     checked: Boolean(values['is_active']),
                     onCheckedChange: (v: boolean) => setField('is_active', v),
                   })
@@ -168,8 +191,37 @@ export function NuevoProveedorView() {
       )
     ),
     h(
+      'div',
+      { style: { padding: '0 24px' } },
+      h(UI.FormErrorSummary, {
+        show: tried > 0,
+        errors: Object.fromEntries(Object.entries(errors).map(([k, v]) => [fieldDomId(k), v])),
+        labels: Object.fromEntries(
+          Object.entries({
+            name: 'Nombre',
+            contact: 'Contacto',
+            notes: 'Nota',
+            is_active: 'Activo',
+          }).map(([k, v]) => [fieldDomId(k), v])
+        ),
+      })
+    ),
+    h(
       UI.DialogFooter,
       null,
+      editingId && access.canRun('purchases.suppliers.delete')
+        ? h(
+            UI.Button,
+            {
+              variant: 'ghost',
+              className: 'mr-auto text-cg-danger hover:bg-cg-danger-bg hover:text-cg-danger',
+              onClick: () => {
+                setConfirmRemove(true);
+              },
+            },
+            'Eliminar'
+          )
+        : null,
       h(
         UI.Button,
         {
@@ -183,12 +235,28 @@ export function NuevoProveedorView() {
       h(
         UI.Button,
         {
-          onClick: () => {
-            void submit();
-          },
+          disabled: recordLoading,
+          pendingLabel: 'Guardando…',
+          successLabel: editingId ? 'Actualizado' : 'Guardado',
+          errorLabel: 'No se guardó',
+          onClick: () => submit(),
         },
         editingId ? 'Actualizar' : 'Guardar'
       )
-    )
+    ),
+    h(UI.ConfirmDialog, {
+      open: confirmRemove,
+      onOpenChange: (o: boolean) => {
+        if (!o && !removing) setConfirmRemove(false);
+      },
+      title: '¿Eliminar este registro?',
+      description: 'Se elimina para siempre: no se puede deshacer.',
+      confirmLabel: 'Eliminar',
+      loadingLabel: 'Eliminando…',
+      loading: removing,
+      onConfirm: () => {
+        void removeEditing();
+      },
+    })
   );
 }

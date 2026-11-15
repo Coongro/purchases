@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "apiVersion": "2.0",
   "displayName": "Compras",
+  "engines": { "coongro": ">=0.82.0 <1.0.0" },
   "assets": {
     "styles": [
       "./dist/assets/tailwind.css",
