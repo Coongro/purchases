@@ -48,7 +48,8 @@
       ],
       "@coongro/calendar/*": [
         "../calendar/dist/*"
-      ]
+      ],
+      "@coongro/ui-components": ["../../packages/ui-components/dist/index.d.ts"]
     }
   },
   "include": [
